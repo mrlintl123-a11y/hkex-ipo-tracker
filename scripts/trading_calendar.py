@@ -158,7 +158,10 @@ def main():
 
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
+        # JSON 模式保留 exit code 用于 API 调用
+        sys.exit(0 if result["is_trading_day"] else 1 if result["is_trading_day"] is False else 2)
     else:
+        # CLI 模式总是 exit 0，不让上游脚本被非交易日"报错"
         if result["is_trading_day"]:
             print(f"✅ {result['date']} 是港股交易日")
         elif result["is_trading_day"] is False:
@@ -166,8 +169,7 @@ def main():
             print(f"❌ {result['date']} 非交易日 ({reason})")
         else:
             print(f"⚠️  {result['date']} 未在日历覆盖范围 ({result['reason']})")
-
-    sys.exit(0 if result["is_trading_day"] else 1 if result["is_trading_day"] is False else 2)
+        sys.exit(0)
 
 
 if __name__ == "__main__":
