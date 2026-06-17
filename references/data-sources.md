@@ -8,16 +8,11 @@
 - 上市文件（公司业务、保荐人）
 
 ### 抓取方式
-```
-web_fetch url="https://www1.hkexnews.hk/listedco/listconews/sehk/[year]/[docid]/[filename].pdf"
-```
-
-### 常用搜索
-- 新股档案：`https://www.hkex.com.hk/Listing/IPO/IPO-Documents`
-- 招股结果：`https://www.hkex.com.hk/Listing/IPO-Information-Centre`
+- 直接访问：`https://www.hkex.com.hk/Listing/IPO/IPO-Documents`
+- 搜索：「港交所 招股章程」「HKEX IPO prospectus」
 
 ### 限制
-- PDF 格式，web_fetch 解析效果差；建议结合 mmx search 找文字版摘要
+- PDF 格式，内容提取需做 OCR 或找文字版摘要
 - 实时配售结果通常 18:00 后发布
 
 ## B. 智通财经（zhitongcaijing.com / so.html5.qq.com）
@@ -28,13 +23,9 @@ web_fetch url="https://www1.hkexnews.hk/listedco/listconews/sehk/[year]/[docid]/
 - 配发结果快讯
 
 ### 抓取方式
-```
-mmx search query "新股孖展 6月X日"
-mmx search query "X公司 配发结果 中签率"
-```
-
-### 关键 URL 模式
-- `so.html5.qq.com/page/real/search_news?docid=70000021_XXXXX` — 智通快讯
+搜索关键词：
+- 「新股孖展 月 日」
+- 「公司名 配发结果 中签率」
 
 ### 优势
 - 更新及时（盘后即出）
@@ -48,9 +39,7 @@ mmx search query "X公司 配发结果 中签率"
 - 聆讯消息
 
 ### 抓取方式
-```
-web_fetch url="https://ipo.jinwucj.com/"
-```
+直接访问：`https://ipo.jinwucj.com/`
 
 ### 优势
 - 倒计时直观（"截止认购倒计时 1.5 天"）
@@ -64,10 +53,9 @@ web_fetch url="https://ipo.jinwucj.com/"
 - 公开 vs 国配倍数对比
 
 ### 抓取方式
-```
-mmx search query "LiveReport 招股周报"
-mmx search query "一手中签率 港股"
-```
+搜索关键词：
+- 「LiveReport 招股周报」
+- 「一手中签率 港股」
 
 ### 优势
 - 一手中签率数据全（回拨后）
@@ -81,9 +69,7 @@ mmx search query "一手中签率 港股"
 - 基石投资者名单
 
 ### 抓取方式
-```
-mmx search query "X公司 招股 公告"
-```
+搜索关键词：「公司名 招股 公告」
 
 ## F. A 股行情（用于 A+H 比价）
 
@@ -103,3 +89,27 @@ mmx search query "X公司 招股 公告"
 | 配发结果 | A 港交所 + D LiveReport | 截止日 + 1 个交易日 18:00 后 |
 | A+H 折价 | A 港交所 + F A 股 | 招股截止前 1 天 |
 | 一手中签率 | D LiveReport + A 港交所 | 配发结果公告后 |
+
+## 🔌 搜索后端适配
+
+本 skill 支持多种搜索后端，通过环境变量 `SEARCH_PROVIDER` 切换：
+
+| 后端 | 说明 | 适用场景 |
+|---|---|---|
+| `agent_native`（默认） | 由 Codex/Claude/GPT agent 使用自身搜索能力 | Codex、Claude Desktop、ChatGPT 等 |
+| `mmx` | MiniMax mmx CLI（需 `pip install mmx-cli`） | MiniMax Token Plan 用户 |
+| `custom` | 通过 `CUSTOM_SEARCH_CMD` 指定命令模板 | 其他 CLI 搜索工具 |
+
+示例：
+```bash
+# agent_native 模式：输出搜索清单，agent 自行搜索后喂回
+export SEARCH_PROVIDER=agent_native
+python scripts/search_provider.py --emit-queries
+
+# mmx 模式：直接调用
+SEARCH_PROVIDER=mmx python scripts/fetch_active_ipos.py --provider mmx
+
+# 自定义模式
+export CUSTOM_SEARCH_CMD="web_search --query {query}"
+export SEARCH_PROVIDER=custom
+```

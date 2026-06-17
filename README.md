@@ -144,11 +144,16 @@ hkex-ipo-tracker/
 ## ⚙️ 依赖
 
 - Python 3.7+
-- `mmx-cli`（[MiniMax Token Plan](https://MiniMax.io) 搜索工具，用于智通财经检索；非必需，不影响 trading_calendar 和 parse_conflict_matrix）
+- **搜索后端**（任选其一）：
+  - `agent_native`：无需额外依赖，由 Codex / Claude / GPT agent 原生搜索（默认）
+  - `mmx`：MiniMax mmx CLI（`pip install mmx-cli`）
+  - `custom`：任何支持命令行的搜索工具，通过 `CUSTOM_SEARCH_CMD` 配置
+
+环境变量 `SEARCH_PROVIDER` 选择后端，默认 `agent_native`。
 
 ## 📅 维护
 
-- 每年 12 月底前用 `mmx search query "次年 港股 交易日 安排"` 更新 `references/holidays_YYYY.json`
+- 每年 12 月底前搜索「次年 港股 交易日 安排」更新 `references/holidays_YYYY.json`
 - 重阳节日期需以港交所官方公告为准（基于农历推算）
 
 ## 🤝 贡献

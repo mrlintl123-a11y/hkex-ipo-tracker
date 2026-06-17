@@ -1,6 +1,6 @@
 ---
 name: hkex-ipo-tracker
-description: "查询并汇总港交所（HKEX）正在招股的公司，含招股详情、认购倍数、公开手数、中签率预估、绿鞋机制、基石投资者、A+H 标记，以及按截止日间隔不到 2 天即冲突构建的资金冲突矩阵。触发关键词：港股招股、港交所IPO、正在招股、新股打新、IPO 周报、HKEX IPO、配发结果、孖展认购、招股期、新股中签率、孖展倍数、回拨。"
+description: "查询并汇总港交所（HKEX）正在招股的公司，含招股详情、认购倍数、公开手数、中签率预估、绿鞋机制、基石投资者、A+H 标记，以及按截止日间隔不到 2 天即冲突构建的资金冲突矩阵。多搜索后端适配：Codex/Claude/GPT 原生搜索、MiniMax mmx CLI、自定义命令。触发关键词：港股招股、港交所IPO、正在招股、新股打新、IPO 周报、HKEX IPO、配发结果、孖展认购、招股期、新股中签率、孖展倍数、回拨。"
 ---
 
 # HKEX IPO Tracker
@@ -33,18 +33,28 @@ python3 scripts/trading_calendar.py 2026-07-01   # 检查指定日期
 - ❌ 非交易日（周末/节假日）→ 直接输出「今日休市」汇报，跳过 IPO 检查
 - ⚠️ 日历未覆盖（如 2027+ 年）→ 提示需更新 holidays 表
 
-数据源：`references/holidays_YYYY.json`（每年初用 mmx 搜索更新）
+数据源：`references/holidays_YYYY.json`（每年初搜索最新交易日历更新）
 
 ### 1. 数据抓取（多源交叉，规避单源失真）
 
-按以下顺序取数据，先并行抓：
+按以下顺序取数据，先并行搜索：
 
-- **A 智通财经**（新股孖展统计/公司公告）→ `mmx search query "新股孖展 6月X日"` 或 `so.html5.qq.com/page/real/search_news`
-- **B 金吾资讯**（ipo.jinwucj.com）→ 实时认购倍数 + 招股概况表
-- **C LiveReport 大数据**（雪球活报告）→ 周报 + 一手中签率
-- **D 港交所披露易**（hkexnews.hk）→ 招股章程、配发结果公告（最终权威源）
-- **E 上市公司 A 股公告**（巨潮/上交所/深交所）→ A+H 折价参考
+- **A 智通财经**（新股孖展统计/公司公告）→ 使用你的网络搜索：「港股 新股孖展 统计 日」
+- **B 金吾资讯**（ipo.jinwucj.com）→ 直接访问 / 搜索「港交所 IPO 正在招股 认购倍数」
+- **C LiveReport 大数据**（雪球活报告）→ 搜索「港股 IPO 招股周报 一手中签率」
+- **D 港交所披露易**（hkexnews.hk）→ 搜索 / 直接访问招股章程页面
+- **E 上市公司 A 股公告**（巨潮/上交所/深交所）→ 搜索 A+H 公司 A 股收盘价
 
+> 💡 **搜索后端选择**：本 skill 适配多种搜索后端。环境变量 `SEARCH_PROVIDER` 控制：
+> - `agent_native`（默认）— 由你（Codex/Claude/GPT agent）使用自身网络搜索能力执行查询
+> - `mmx` — MiniMax mmx CLI（`pip install mmx-cli` 后可用）
+> - `custom` — 通过 `CUSTOM_SEARCH_CMD` 环境变量指定命令模板
+>
+> **agent_native 工作流**：
+> 1. 运行 `python scripts/search_provider.py --emit-queries` 获取搜索查询清单
+> 2. 用你的网络搜索工具逐条执行查询
+> 3. 将结果写入 `results.jsonl`（每行一个 `SearchResult` JSON）
+> 4. 运行 `python scripts/fetch_active_ipos.py --input results.jsonl` 解析
 **数据源优先级**：
 - **价格/招股数/截止日/基石名单** → D 港交所披露易（招股章程）
 - **认购倍数（孖展）** → A 智通财经（每日盘后更新）
