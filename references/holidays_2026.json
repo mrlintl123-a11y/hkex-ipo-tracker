@@ -1,0 +1,43 @@
+{
+  "year": 2026,
+  "note": "港股交易日历 - 含港股休市日和港股通特殊休市日（保守判断）",
+  "data_source": "中国创盈/港交所 2026 节假日公告 + 历年规律",
+  "last_updated": "2026-06-17",
+  "trading_calendar": {
+    "trading_days_count_estimate": 246,
+    "closed_weekends": "自动判断 (周六/日)",
+    "hk_closed_days": [
+      {"date": "2026-01-01", "holiday": "元旦"},
+      {"date": "2026-02-16", "holiday": "春节前夕 (半日市，下午休市)", "half_day": true},
+      {"date": "2026-02-17", "holiday": "春节 (农历除夕)"},
+      {"date": "2026-02-18", "holiday": "春节 (农历正月初一)"},
+      {"date": "2026-02-19", "holiday": "春节 (农历正月初二)"},
+      {"date": "2026-04-03", "holiday": "耶稣受难节 (Good Friday)"},
+      {"date": "2026-04-06", "holiday": "复活节星期一 (Easter Monday)"},
+      {"date": "2026-04-07", "holiday": "复活节翌日 / 清明节翌日"},
+      {"date": "2026-05-01", "holiday": "劳动节"},
+      {"date": "2026-05-25", "holiday": "佛诞"},
+      {"date": "2026-06-19", "holiday": "端午节"},
+      {"date": "2026-07-01", "holiday": "香港特别行政区成立纪念日"},
+      {"date": "2026-09-25", "holiday": "中秋节翌日"},
+      {"date": "2026-10-01", "holiday": "国庆节"},
+      {"date": "2026-10-19", "holiday": "重阳节 (农历九月初九，待官方确认)"},
+      {"date": "2026-12-25", "holiday": "圣诞节"},
+      {"date": "2026-12-26", "holiday": "圣诞节翌日 (Boxing Day)"}
+    ],
+    "hk_connect_special_closure": [
+      {"date_range": "2026-02-15 to 2026-02-23", "reason": "港股通春节特殊安排 (港股本身 2/16 下午+2/17-19 休市)", "note": "为安全起见 cron 整周跳过"},
+      {"date_range": "2026-04-03 to 2026-04-07", "reason": "港股通清明+复活节特殊安排", "note": "港股 4/3, 4/6, 4/7 休市"},
+      {"date_range": "2026-05-01 to 2026-05-05", "reason": "港股通五一特殊安排 (港股本身仅 5/1 休市)", "note": "5/2-5/3 港股继续交易，但保守跳过"},
+      {"date_range": "2026-09-25 to 2026-09-27", "reason": "港股通中秋特殊安排", "note": "港股 9/25 休市"},
+      {"date_range": "2026-10-01 to 2026-10-08", "reason": "港股通国庆特殊安排", "note": "港股 10/1 休市，其余待确认"}
+    ]
+  },
+  "weekend_rule": "周六周日自动判定为休市",
+  "verification_strategy": {
+    "level_1_static": "使用本文件 holidays 表",
+    "level_2_dynamic": "若脚本检测到非节假日但港股通页面提示休市 (e.g. 临时休市)，以港股通页面为准",
+    "level_3_human": "若 static + dynamic 矛盾，输出 ⚠️ 异常等待人工确认"
+  },
+  "update_required": "每年 12 月底前用 mmx 搜索\"2027年 港股 交易日 安排\"更新次年表"
+}
