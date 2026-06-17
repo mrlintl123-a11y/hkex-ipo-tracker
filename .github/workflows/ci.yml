@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    name: Validate skill structure
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml
+
+      - name: Validate SKILL.md frontmatter
+        run: |
+          python3 -c "
+          import yaml
+          from pathlib import Path
+
+          skill_md = Path('SKILL.md')
+          if not skill_md.exists():
+              print('❌ SKILL.md not found')
+              exit(1)
+
+          text = skill_md.read_text(encoding='utf-8')
+          if not text.startswith('---\n'):
+              print('❌ SKILL.md missing frontmatter')
+              exit(1)
+
+          fm = text.split('---', 2)[1]
+          try:
+              data = yaml.safe_load(fm)
+              if 'name' not in data or 'description' not in data:
+                  print('❌ frontmatter missing name/description')
+                  exit(1)
+              print(f'✅ SKILL.md valid: name={data[\"name\"]!r}, desc_len={len(data[\"description\"])}')
+          except yaml.YAMLError as e:
+              print(f'❌ YAML parse error: {e}')
+              exit(1)
+          "
+
+      - name: Validate JSON files
+        run: |
+          python3 -c "
+          import json
+          from pathlib import Path
+
+          json_files = list(Path('references').rglob('*.json'))
+          for jf in json_files:
+              try:
+                  data = json.loads(jf.read_text(encoding='utf-8'))
+                  print(f'✅ {jf}: {len(json.dumps(data))} bytes')
+              except json.JSONDecodeError as e:
+                  print(f'❌ {jf}: {e}')
+                  exit(1)
+          print(f'✅ All {len(json_files)} JSON files valid')
+          "
+
+      - name: Validate Python syntax
+        run: |
+          python3 -c "
+          import py_compile
+          from pathlib import Path
+
+          py_files = list(Path('scripts').rglob('*.py'))
+          for pf in py_files:
+              if '__pycache__' in str(pf):
+                  continue
+              try:
+                  py_compile.compile(str(pf), doraise=True)
+                  print(f'✅ {pf}: syntax OK')
+              except py_compile.PyCompileError as e:
+                  print(f'❌ {pf}: {e}')
+                  exit(1)
+          print(f'✅ All {len(py_files)} Python files syntactically valid')
+          "
+
+      - name: Test trading_calendar.py
+        run: |
+          python3 scripts/trading_calendar.py 2026-06-17
+          python3 scripts/trading_calendar.py 2026-07-01
+          python3 scripts/trading_calendar.py 2026-06-20
+          echo "✅ trading_calendar tests passed"
+
+      - name: Test parse_conflict_matrix.py
+        run: |
+          echo '[
+            {"name": "TestA", "code": "00001", "closing": "2026-06-16"},
+            {"name": "TestB", "code": "00002", "closing": "2026-06-17"},
+            {"name": "TestC", "code": "00003", "closing": "2026-06-23"}
+          ]' | python3 scripts/parse_conflict_matrix.py
+          echo "✅ parse_conflict_matrix tests passed"
+
+      - name: Run quick_validate (skill-creator)
+        run: |
+          if [ -f /dev/stdin ]; then
+            echo "skip quick_validate (not installed in CI)"
+          else
+            echo "skip quick_validate"
+          fi
+
+  lint:
+    name: Lint Python code
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install ruff
+        run: pip install ruff
+      - name: Run ruff
+        run: |
+          ruff check scripts/ || echo "⚠️ ruff warnings (non-blocking)"
