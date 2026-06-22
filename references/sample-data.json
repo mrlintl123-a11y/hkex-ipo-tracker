@@ -25,7 +25,11 @@
       "sponsors": "民银资本、浦银国际",
       "category": "多光谱AI",
       "profitability": "盈利",
-      "status_note": "今日上市"
+      "status_note": "今日上市",
+      "description": "示例公司",
+      "est_market_cap_hkd": 1000000000.0,
+      "risk_flags": [],
+      "redistribution_pct": 0
     },
     {
       "name": "星源材质",
@@ -49,7 +53,11 @@
       "sponsors": "中信建投国际",
       "category": "锂电池隔膜/储能",
       "profitability": "盈利",
-      "status_note": "配发结果已出"
+      "status_note": "配发结果已出",
+      "description": "示例公司",
+      "est_market_cap_hkd": 1000000000.0,
+      "risk_flags": [],
+      "redistribution_pct": 0
     },
     {
       "name": "华健未来-B",
@@ -72,7 +80,11 @@
       "sponsors": "中信证券",
       "category": "18A 生物科技",
       "profitability": "亏损",
-      "status_note": "配发结果已出"
+      "status_note": "配发结果已出",
+      "description": "示例公司",
+      "est_market_cap_hkd": 1000000000.0,
+      "risk_flags": [],
+      "redistribution_pct": 0
     },
     {
       "name": "仙工智能",
@@ -95,7 +107,11 @@
       "sponsors": "中金公司",
       "category": "18C 机器人控制",
       "profitability": "亏损",
-      "status_note": "配发结果待出"
+      "status_note": "配发结果待出",
+      "description": "示例公司",
+      "est_market_cap_hkd": 1000000000.0,
+      "risk_flags": [],
+      "redistribution_pct": 0
     },
     {
       "name": "麦科医药-B",
@@ -118,7 +134,11 @@
       "sponsors": "建银国际、招商证券国际",
       "category": "18A 多肽药物",
       "profitability": "亏损",
-      "status_note": "配发结果待出"
+      "status_note": "配发结果待出",
+      "description": "示例公司",
+      "est_market_cap_hkd": 1000000000.0,
+      "risk_flags": [],
+      "redistribution_pct": 0
     },
     {
       "name": "领益智造",
@@ -142,7 +162,13 @@
       "sponsors": "国泰君安国际",
       "category": "消费电子/AI终端",
       "profitability": "盈利",
-      "fundraising_max": "82.6亿港元"
+      "fundraising_max": "82.6亿港元",
+      "description": "果链精密功能件龙头",
+      "est_market_cap_hkd": 65000000000.0,
+      "risk_flags": [
+        "流通盘大"
+      ],
+      "redistribution_pct": 0
     },
     {
       "name": "科拓股份",
@@ -164,7 +190,11 @@
       "a_h": "❌",
       "sponsors": "中金公司、民银资本",
       "category": "智慧停车",
-      "profitability": "盈利"
+      "profitability": "盈利",
+      "description": "示例公司",
+      "est_market_cap_hkd": 1000000000.0,
+      "risk_flags": [],
+      "redistribution_pct": 0
     },
     {
       "name": "圣邦股份",
@@ -187,7 +217,11 @@
       "ah_discount": "41%",
       "sponsors": "中金公司、华泰国际",
       "category": "模拟集成电路龙头",
-      "profitability": "盈利"
+      "profitability": "盈利",
+      "description": "示例公司",
+      "est_market_cap_hkd": 1000000000.0,
+      "risk_flags": [],
+      "redistribution_pct": 0
     },
     {
       "name": "中科闻歌",
@@ -210,7 +244,13 @@
       "sponsors": "中金公司",
       "category": "国家队AI/决策智能(18C)",
       "profitability": "亏损",
-      "chapter": "18C"
+      "chapter": "18C",
+      "description": "决策AI国家队(18C)",
+      "est_market_cap_hkd": 3600000000.0,
+      "risk_flags": [
+        "18C未盈利"
+      ],
+      "redistribution_pct": 15
     },
     {
       "name": "礼邦医药-B",
@@ -233,7 +273,13 @@
       "sponsors": "摩根士丹利、中金公司",
       "category": "18A 创新药",
       "profitability": "亏损",
-      "chapter": "18A"
+      "chapter": "18A",
+      "description": "肾病创新药18A标杆",
+      "est_market_cap_hkd": 3000000000.0,
+      "risk_flags": [
+        "18A未盈利"
+      ],
+      "redistribution_pct": 10
     },
     {
       "name": "来福谐波",
@@ -255,7 +301,11 @@
       "a_h": "❌",
       "sponsors": "中金公司",
       "category": "机器人/谐波减速器",
-      "profitability": "亏损"
+      "profitability": "亏损",
+      "description": "示例公司",
+      "est_market_cap_hkd": 1000000000.0,
+      "risk_flags": [],
+      "redistribution_pct": 0
     },
     {
       "name": "芯碁微装",
@@ -278,7 +328,11 @@
       "ah_discount": "40%",
       "sponsors": "华泰国际",
       "category": "半导体设备",
-      "profitability": "盈利"
+      "profitability": "盈利",
+      "description": "示例公司",
+      "est_market_cap_hkd": 1000000000.0,
+      "risk_flags": [],
+      "redistribution_pct": 0
     }
   ],
   "conflict_matrix": {

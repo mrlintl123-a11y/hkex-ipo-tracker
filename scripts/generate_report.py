@@ -62,7 +62,7 @@ def validate_and_enrich(raw):
     raise ValueError(f'Invalid input format: expected list or dict with active_ipos key, got {type(raw).__name__}')
 
 def load_data():
-    parser = argparse.ArgumentParser(description='HKEX IPO Report Generator v4.1.1')
+    parser = argparse.ArgumentParser(description='HKEX IPO Report Generator v4.1.2')
     parser.add_argument('--input', '-i', help='JSON file with IPO data')
     parser.add_argument('--demo', action='store_true', help='Use sample data for demo only (NOT live data)')
     args = parser.parse_args()
@@ -336,7 +336,7 @@ print()
 print('## \U0001f525 热度评分')
 print()
 print('| 公司 | 孖展(30%) | 基石(25%) | 手数(20%) | 入场费(15%) | A+H(10%) | 主营 | 港股通 | **综合** |')
-print('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
+print('| --- | --- | --- | --- | --- | --- | --- | --- | --- |')
 results = []
 for ipo in ipos:
     score = heat_score(ipo)
