@@ -282,6 +282,84 @@ for g in matrix['groups']:
     print(render_table(members_in_group))
     print()
 
+
+print()
+
+# --- Per-IPO Detail Cards (v4.2) ---
+print("## 个股详情")
+print()
+
+from collections import defaultdict
+_dg = defaultdict(list)
+for ipo in ipos:
+    if ipo.get("closing_date", "") >= snap:
+        _dg[ipo.get("closing_date", "?")].append(ipo)
+
+for _cd in sorted(_dg.keys()):
+    _mbs = _dg[_cd]
+    _cnt = len(_mbs)
+    _td_date = datetime.strptime(_cd, "%Y-%m-%d")
+    _snap_date = datetime.strptime(snap, "%Y-%m-%d")
+    _delta = _td_date - _snap_date
+    _dl = _delta.days
+    _hl = _dl * 24
+    _td_flag = (_dl == 0)
+    _nw_flag = any("暂无" in m.get("margin_multiple", "") for m in _mbs)
+    _lp = []
+    if _td_flag: _lp.append("今日截止")
+    if _nw_flag: _lp.append("新启招")
+    _ls = " " + " ".join(_lp) if _lp else ""
+    print(f"### 截止 {_cd[-5:]} (剩 {_dl} 天 / {_hl}h, {_cnt} 只{_ls})")
+    print()
+
+    for _ix, _ip in enumerate(_mbs, 1):
+        _nm = _ip.get("name", "?")
+        _cd2 = _ip.get("code", "?")
+        _of = _ip.get("offer_price", "-")
+        _bl = _ip.get("board_lot", 100)
+        _ps = _ip.get("period_start", "?")
+        _pe = _ip.get("period_end", "?")
+        _ts = _ip.get("total_shares", "?")
+        _pl = int(_ip.get("public_lots", 0))
+        _rt = ""
+        if _ip.get("_redistribution_applied"):
+            _og = _ip.get("_public_lots_initial", _pl)
+            _ch = _ip.get("chapter", "")
+            _rt = f" ({_ch}+{_ip.get('redistribution_pct',0)}%: {_og:,}→{_pl:,}手)"
+        _ld = f"{_pl:,}手{_rt}" if _pl else "-"
+        _mg = _ip.get("margin_multiple", "-")
+        _md = "NEW 暂无孖展" if "暂无" in _mg else _mg
+        _gs2 = _ip.get("greenshoe", "-")
+        _cr = _ip.get("cornerstone", "-")
+        if _cr and _cr != "否" and _cr != "-":
+            _cds = _cr[:60] + ("..." if len(_cr) > 60 else "")
+        else:
+            _cds = "无"
+        _ah2 = _ip.get("a_h", "-")
+        if _ah2 and _ah2 != "否" and _ah2 != "-":
+            _dc2 = _ip.get("ah_discount", "")
+            _ad = f"A+H (折{_dc2})" if _dc2 else "A+H"
+        else:
+            _ad = "纯H"
+        _lt = _ip.get("listing_date", "?")
+        _ls2 = _lt[-5:] if len(_lt) >= 5 else _lt
+        _ds = _ip.get("description", "-")
+        _rk = _ip.get("risk_flags", [])
+        _rs = " | ".join(_rk) if _rk else ""
+        _sc2 = _stock_connect_analysis(_ip)
+        _hs2 = heat_score(_ip)
+        _st = "⭐" * min(round(_hs2), 5) if _hs2 >= 1 else "—"
+
+        print(f"**{_ix}. {_nm} {_cd2}** [{_hs2} {_st}]")
+        _l1 = f"  发售价 {_of} | 每手 {_bl} 股 | 招股期 {_ps}~{_pe}"
+        if _rs: _l1 += f" | 风险: {_rs}"
+        print(_l1)
+        print(f"  全球发售 {_ts} | 公开 {_ld} | 孖展 {_md}")
+        print(f"  绿鞋 {_gs2} | 基石 {_cds} | {_ad} | 上市日 {_ls2}")
+        print(f"  主营 {_ds} | 港股通 {_sc2}")
+        print()
+
+print()
 # --- Data confidence ---
 print('## \U0001f4e1 认购倍数数据可信度')
 print()
