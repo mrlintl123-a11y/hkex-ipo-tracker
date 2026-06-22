@@ -186,3 +186,38 @@ python3 scripts/trading_calendar.py 2026-07-01   # 检查指定日期
 - `references/ipo-mechanics.md` — 港股 IPO 回拨规则、绿鞋/基石机制
 - `scripts/fetch_active_ipos.py` — 主抓取脚本
 - `scripts/parse_conflict_matrix.py` — 冲突矩阵计算
+
+
+## 7. A+H 折价分析 (v4.0)
+
+`ash
+python3 scripts/calc_ah_discount.py --a <A价格> --h <H发售价> --rate <汇率>
+python3 scripts/calc_ah_discount.py --demo
+`
+
+## 8. 5维风险评分 (v4.0)
+
+`ash
+python3 scripts/risk_score.py --demo
+python3 scripts/risk_score.py --input ipos.json
+`
+
+## 9. 资金排期助手 (v4.0)
+
+`ash
+python3 scripts/funding_scheduler.py --funds 50000 --preference Moderate
+`
+
+## 10. 首日预测 & 配发追踪 (v4.0)
+
+`ash
+python3 scripts/historical_first_day.py --demo
+python3 scripts/allotment_tracker.py --demo
+python3 scripts/clawback_calculator.py --demo
+`
+
+## 11. 端到端测试
+
+`ash
+python3 scripts/e2e_test.py
+`

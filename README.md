@@ -174,3 +174,19 @@ MIT License — 详见 [LICENSE](./LICENSE)
 ## ⚠️ 免责声明
 
 本工具仅供信息汇总和学习使用，**不构成任何投资建议**。打新有风险，投资需谨慎。请独立判断并自负盈亏。
+
+
+## v4.x 新增模块 (2026-06-22)
+
+| 模块 | 脚本 | 说明 |
+|---|---|---|
+| A+H 折价分析 | calc_ah_discount.py | A+H 第二上市折价率自动计算 |
+| 5 维风险评分 | risk_score.py | 基石30%+题材20%+估值20%+热度15%+风险15% |
+| 资金排期助手 | funding_scheduler.py | 按可用资金+风险偏好分配打新组合 |
+| 历史首日预测 | historical_first_day.py | 332只新股数据驱动的首日涨幅预测 |
+| 配发追踪 | allotment_tracker.py | 含套路拨检测(公开>=100x但最终仅10%) |
+| 回拨计算 | clawback_calculator.py | 18A/18C重新分配+标准回拨 |
+
+`ash
+python scripts/e2e_test.py   # 一次测试全部 8 个模块
+`

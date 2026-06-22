@@ -70,3 +70,13 @@ market_cap = post_ipo_shares * max_offer_price
 # 折价（A+H 适用）
 discount = 1 - hk_offer_price / a_share_price_cny * hkd_cny_rate
 ```
+
+
+## v4.0+ 新增字段
+
+| 字段 | 公式/来源 | 说明 |
+|---|---|---|
+| A+H 折价率 | 1 - H发售价 / A股价 * 汇率 | calc_ah_discount.py |
+| 流通市值 | 公开手数 * 每手股数 * 发售价 | 首日预测输入 |
+| 5维评分 | 基石30%+题材20%+估值20%+热度15%+风险15% | risk_score.py |
+| 套路拨标记 | 公开>=100x 但最终公开<=10% | allotment_tracker.py |
