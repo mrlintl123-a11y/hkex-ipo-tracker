@@ -98,6 +98,24 @@ def load_data():
     print('       Demo:       generate_report.py --demo', file=sys.stderr)
     sys.exit(1)
 
+
+def _stock_connect_analysis(ipo):
+    ah = ipo.get("a_h", "")
+    if ah and ah != "\u274c":
+        return "\u5df2\u7eb3\u5165(A+H)"
+    cap = ipo.get("est_market_cap_hkd", 0)
+    name = ipo.get("name", "")
+    if "DRS" in name or "Merdeka" in name:
+        return "\u5916\u56fdDRS,\u5927\u6982\u7387\u4e0d\u7eb3\u5165"
+    if cap >= 5e10:
+        return "\u9884\u8ba1\u7eb3\u5165(\u5927\u76d8,2026/9\u751f\u6548)"
+    elif cap >= 2e10:
+        return "\u5f85\u68c0\u8ba8(2026/9\u7a97\u53e3,\u9700\u5165\u6052\u751f\u7efc\u6307)"
+    elif cap >= 5e9:
+        return "\u63a5\u8fd1\u95e8\u69db(2026/9\u7a97\u53e3,\u9700\u5e02\u503c>=50\u4ebf)"
+    else:
+        return "\u672a\u8fbe\u6807(\u5e02\u503c<50\u4ebf\u6e2f\u5143)"
+
 data = load_data()
 
 ipos = data['active_ipos']
@@ -183,8 +201,8 @@ def fmt_shares(n):
 
 def render_table(ipo_list):
     lines = []
-    lines.append('| 上市日 | 公司 | 代码 | 截止日 | 距截止 | 全球发售 | 公开手数 | 认购倍数+可信度 | 绿鞋 | 基石 | A+H |')
-    lines.append('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
+    lines.append('| 上市日 | 公司 | 代码 | 截止日 | 距截止 | 全球发售 | 公开手数 | 认购倍数+可信度 | 绿鞋 | 基石 | A+H | 港股通 |')
+    lines.append('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
     for ipo in ipo_list:
         conf_icon = ipo.get('data_confidence', '\u26ab')
         margin = ipo.get('margin_multiple', '-')
@@ -194,6 +212,7 @@ def render_table(ipo_list):
         cs_raw = ipo.get('cornerstone', '\u274c')
         cs = cs_raw[:50] + '...' if isinstance(cs_raw, str) and len(cs_raw) > 50 else cs_raw
         ah = ipo.get('a_h', '\u274c')
+        sc = _stock_connect_analysis(ipo)
         lots = fmt_lots(ipo.get('public_lots', '-'))
         if ipo.get('_redistribution_applied'):
             lots += ' \u2197'
@@ -211,7 +230,8 @@ def render_table(ipo_list):
             f"| {margin} {conf_icon} "
             f"| {gs} "
             f"| {cs} "
-            f"| {ah} |"
+            f"| {ah} "
+            f"| {sc} |"
         )
     return '\n'.join(lines)
 
@@ -273,11 +293,50 @@ for status, names in conf.items():
         print(f'| {status} | {joined} |')
 print()
 
+
+# --- Key Observations ---
+print("## \U0001f50d \u5173\u952e\u89c2\u5bdf")
+print()
+today_deadlines = [i for i in active if i.get("days_before_close", 99) <= 1]
+if today_deadlines:
+    names_str = "、".join(i["name"] for i in today_deadlines)
+    print(f"1. **\u660e\u65e5\u622a\u6b62\u5012\u8ba1\u65f6**\uff1a{names_str} \u5171{len(today_deadlines)}\u53ea\u660e\u65e5 16:00 \u622a\u6b62\uff0c\u4eca\u6668\u76d8\u524d\u5b50\u5c55\u6570\u636e\u662f\u51b3\u5b9a\u80dc\u8d1f\u5173\u952e")
+ah_stocks = [i for i in ipos if i.get("a_h", "") not in ("", "\u274c")]
+if ah_stocks:
+    discounts = []
+    for i in ah_stocks:
+        d = i.get("ah_discount", "")
+        if d:
+            discounts.append(f"{i['name']}(\u6298{d})")
+    if discounts:
+        print(f"2. **A+H\u6298\u4ef7\u6c47\u603b**\uff1a{chr(10).join(discounts)} \u2014 \u672c\u5468{len(ah_stocks)}\u53eaA+H\u5168\u90e8\u5927\u5e45\u6298\u4ef7\uff0c\u4e0a\u5e02\u540e\u6298\u4ef7\u6536\u7a84\u662f\u6838\u5fc3\u9a71\u52a8\u529b")
+redist_stocks = [i for i in ipos if i.get("_redistribution_applied")]
+if redist_stocks:
+    notes = []
+    for i in redist_stocks:
+        old_lots = i.get("_public_lots_initial", 0)
+        new_lots = i.get("public_lots", 0)
+        notes.append(f"{i['name']}: {old_lots:,}\u624b\u2192{new_lots:,}\u624b ({i.get('_redistribution_applied','')})")
+    print(f"3. **18A/18C\u91cd\u65b0\u5206\u914d\u4fee\u6b63**\uff1a{chr(10).join('   - '+n for n in notes)}")
+risk_stocks = [i for i in ipos if i.get("risk_flags")]
+if risk_stocks:
+    high_risk = [i for i in risk_stocks if len(i.get("risk_flags", [])) >= 2]
+    if high_risk:
+        names_str = "、".join(f"{i['name']}({','.join(i['risk_flags'])})" for i in high_risk)
+        print(f"4. **\u98ce\u9669\u6807\u8bb0**\uff1a{names_str}")
+cold = [i for i in active if i.get("margin_multiple", "0").replace("\u500d", "").replace("\u6682\u65e0", "0") != "0"]
+if cold:
+    try:
+        coldest = min(cold, key=lambda x: float(x.get("margin_multiple", "0").replace("\u500d", "")))
+        print(f"5. **\u6781\u51b7\u8b66\u544a**\uff1a{coldest['name']} \u4ec5{coldest.get('margin_multiple','')}\uff0c\u56fd\u914d\u4e0d\u8db3\u53ef\u80fd\u89e6\u53d1\u201c\u5957\u8def\u62e8\u201d")
+    except:
+        pass
+print()
 # --- Heat scores ---
 print('## \U0001f525 热度评分')
 print()
-print('| 公司 | 孖展(30%) | 基石(25%) | 手数(20%) | 入场费(15%) | A+H(10%) | **综合** |')
-print('| --- | --- | --- | --- | --- | --- | --- |')
+print('| 公司 | 孖展(30%) | 基石(25%) | 手数(20%) | 入场费(15%) | A+H(10%) | 主营 | 港股通 | **综合** |')
+print('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
 results = []
 for ipo in ipos:
     score = heat_score(ipo)
@@ -296,12 +355,15 @@ for ipo, score in results:
     ah = ipo.get('a_h', '\u274c')
     if ah != '\u274c' and ipo.get('ah_discount'):
         ah += f' \u6298{ipo["ah_discount"]}'
-    print(f"| {ipo['name']} | {m_disp} | {cs[:40]} | {lots}手 | {fee} | {ah} | {score} {stars} |")
+    desc = ipo.get('description', '-')
+    sc_h = _stock_connect_analysis(ipo)
+    print(f"| {ipo['name']} | {m_disp} | {cs[:40]} | {lots}手 | {fee} | {ah} | {desc} | {sc_h} | {score} {stars} |")
 print()
 
 # --- Strategy ---
-print("## \U0001f386 \u8d44\u91d1\u5206\u6863\u7b56\u7565")
+print("## \u8d44\u91d1\u5206\u6863\u7b56\u7565")
 print()
+
 def _entry_fee(ipo):
     price_str = ipo.get("offer_price", "0").replace(" HKD", "").replace(" (\u6700\u9ad8)", "")
     if "-" in price_str:
@@ -313,23 +375,33 @@ def _entry_fee(ipo):
             p = 100000
     return p * ipo.get("board_lot", 100)
 
-tier_budgets = [
-    ("\u22641\u4e07\u6e2f\u5143", 10000),
-    ("1-5\u4e07\u6e2f\u5143", 50000),
-    ("5-50\u4e07\u6e2f\u5143", 500000),
-    (">50\u4e07\u6e2f\u5143", float("inf")),
-]
-for tier_name, budget in tier_budgets:
+def _pick(top_n, min_score, max_fee):
     candidates = sorted(
-        [i for i in active if heat_score(i) >= 2.0 and _entry_fee(i) <= budget],
+        [i for i in active if heat_score(i) >= min_score and _entry_fee(i) <= max_fee],
         key=lambda x: heat_score(x), reverse=True
     )
     if candidates:
-        names_str = "、".join(f"{i["name"]}({i.get("board_lot",0)}×{i.get("offer_price","-")})" for i in candidates[:5])
-        print(f"- **{tier_name}**\uff1a{names_str}")
-    else:
-        print(f"- **{tier_name}**\uff1a\u65e0\u5408\u9002\u6807\u7684")
+        return "\u3001".join(f"{i['name']}({i.get('board_lot',0)}\u00d7{i.get('offer_price','-')})" for i in candidates[:top_n])
+    return "\u65e0\u5408\u9002\u6807\u7684"
+
+under_10k = _pick(4, 2.0, 10000)
+low_mid = _pick(4, 2.0, 50000)
+mid = _pick(5, 2.0, 500000)
+high = _pick(5, 2.0, float("inf"))
+
+cold_plays = sorted(
+    [i for i in active if heat_score(i) < 2.5 and heat_score(i) >= 1.5],
+    key=lambda x: float(x.get("margin_multiple", "0").replace("\u500d", "").replace("\u6682\u65e0", "0") or 0)
+)
+cold_str = "\u3001".join(f"{i['name']}({i.get('margin_multiple','-')})" for i in cold_plays[:4]) if cold_plays else "\u65e0"
+
+print(f"- **\u22641\u4e07\u6e2f\u5143**\uff1a{under_10k}")
+print(f"- **1-5\u4e07\u6e2f\u5143**\uff1a{low_mid}")
+print(f"- **5-50\u4e07\u6e2f\u5143**\uff08\u4e3b\u529b\uff09\uff1a{mid}")
+print(f"- **>50\u4e07\u6e2f\u5143**\uff1a{high}")
+print(f"- **\u51b7\u95e8\u535a**\uff1a{cold_str}")
 print()
+
 # --- Key dates ---
 print('## \U0001f514 关键时间节点')
 print()
@@ -355,3 +427,4 @@ if redist_stocks:
     notes = '、'.join(f"{i['name']}({i.get('_redistribution_applied','')})" for i in redist_stocks)
     print(f'> \U0001f4cc 18A/18C重新分配：{notes}')
 print(f'> \u2139\ufe0f 数据来源：智通财经/金吾资讯/LiveReport/港交所披露易 | 快照 {snap} {snap_time}')
+print("> \U0001f4cc **\u6e2f\u80a1\u901a\u7eb3\u5165\u5206\u6790**\uff1a\u57fa\u4e8e\u6052\u751f\u6307\u6570\u516c\u53f8\u300a\u6307\u6570\u7f16\u7b97\u7ec6\u5219\u300b\u53ca\u6e2f\u4ea4\u6240\u300a\u6e2f\u80a1\u901a\u7eb3\u5165\u6761\u4ef6\u300b\u5ba2\u89c2\u8ba1\u7b97\uff0c\u4ec5\u4f9b\u53c2\u8003\uff0c\u4e0d\u6784\u6210\u6295\u8d44\u5efa\u8bae\u3002\u5b9e\u9645\u7eb3\u5165\u4ee5\u6e2f\u4ea4\u6240\u516c\u544a\u4e3a\u51c6\u3002")

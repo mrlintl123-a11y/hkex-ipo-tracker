@@ -17,7 +17,13 @@
     "a_h": "✅ (A股 002600.SZ)",
     "ah_discount": "44%",
     "sponsors": "国泰君安国际",
-    "category": "消费电子"
+    "category": "消费电子",
+    "description": "果链精密功能件龙头，全球最大消费电子精密件供应商之一",
+    "est_market_cap_hkd": 65000000000.0,
+    "risk_flags": [
+      "流通盘大(812M股)",
+      "入场费高(6,719HKD)"
+    ]
   },
   {
     "name": "中科闻歌",
@@ -38,7 +44,13 @@
     "sponsors": "中金公司",
     "category": "18C AI决策智能",
     "chapter": "18C",
-    "redistribution_pct": 15
+    "redistribution_pct": 15,
+    "description": "决策AI国家队，多模态大模型+知识图谱核心技术",
+    "est_market_cap_hkd": 3600000000.0,
+    "risk_flags": [
+      "18C未盈利",
+      "高倍数(1092x)中签率极低"
+    ]
   },
   {
     "name": "科拓股份",
@@ -57,7 +69,14 @@
     "cornerstone": "❌",
     "a_h": "❌",
     "sponsors": "中金公司",
-    "category": "智慧停车"
+    "category": "智慧停车",
+    "description": "智慧停车系统龙头，2次IPO失败(2018/2024)，曾被证监会20问",
+    "est_market_cap_hkd": 1600000000.0,
+    "risk_flags": [
+      "2次IPO失败",
+      "证监会20问",
+      "无基石"
+    ]
   },
   {
     "name": "圣邦股份",
@@ -77,7 +96,12 @@
     "a_h": "✅ (A股 300661.SZ)",
     "ah_discount": "41%",
     "sponsors": "中金公司",
-    "category": "模拟IC龙头"
+    "category": "模拟IC龙头",
+    "description": "模拟芯片龙头，国内信号链+电源管理双线领先",
+    "est_market_cap_hkd": 46000000000.0,
+    "risk_flags": [
+      "A+H折价收窄风险"
+    ]
   },
   {
     "name": "PT Merdeka Gold",
@@ -96,7 +120,13 @@
     "cornerstone": "❌",
     "a_h": "❌",
     "sponsors": "-",
-    "category": "矿业"
+    "category": "矿业",
+    "description": "印尼金矿运营商，以DRS形式第二上市",
+    "est_market_cap_hkd": 400000000.0,
+    "risk_flags": [
+      "外国DRS可能被港股通排除",
+      "小盘流动性差"
+    ]
   },
   {
     "name": "芯碁微装",
@@ -116,7 +146,10 @@
     "a_h": "✅ (A股 688630.SH)",
     "ah_discount": "40%",
     "sponsors": "华泰国际",
-    "category": "半导体设备"
+    "category": "半导体设备",
+    "description": "直写光刻设备龙头，PCB/IC载板激光直接成像",
+    "est_market_cap_hkd": 20000000000.0,
+    "risk_flags": []
   },
   {
     "name": "海光芯正",
@@ -135,7 +168,12 @@
     "cornerstone": "✅",
     "a_h": "❌",
     "sponsors": "中金公司",
-    "category": "半导体"
+    "category": "半导体",
+    "description": "海光信息(HK)子公司，高端GPU/AI芯片设计",
+    "est_market_cap_hkd": 34000000000.0,
+    "risk_flags": [
+      "母公司海光信息估值波动传导"
+    ]
   },
   {
     "name": "白鸽在线",
@@ -154,7 +192,13 @@
     "cornerstone": "❌",
     "a_h": "❌",
     "sponsors": "-",
-    "category": "保险科技"
+    "category": "保险科技",
+    "description": "场景保险SaaS第一股，出行+医疗+物流场景覆盖",
+    "est_market_cap_hkd": 680000000.0,
+    "risk_flags": [
+      "证监会问询",
+      "市值较小"
+    ]
   },
   {
     "name": "礼邦医药-B",
@@ -175,7 +219,14 @@
     "sponsors": "摩根士丹利",
     "category": "18A创新药",
     "chapter": "18A",
-    "redistribution_pct": 10
+    "redistribution_pct": 10,
+    "description": "肾病创新药18A标杆，核心管线IgA肾病III期临床",
+    "est_market_cap_hkd": 3000000000.0,
+    "risk_flags": [
+      "18A未盈利",
+      "研发失败风险",
+      "管线集中度高"
+    ]
   },
   {
     "name": "真健康医疗-B",
@@ -194,7 +245,14 @@
     "cornerstone": "❌",
     "a_h": "❌",
     "sponsors": "中金公司",
-    "category": "18A医疗"
+    "category": "18A医疗",
+    "description": "经皮穿刺手术机器人第一股，胸腹部微创穿刺导航",
+    "est_market_cap_hkd": 1800000000.0,
+    "risk_flags": [
+      "18A未盈利",
+      "商业化早期",
+      "入场费极高(2,735HKD)"
+    ]
   },
   {
     "name": "来福谐波",
@@ -213,7 +271,12 @@
     "cornerstone": "✅ 高瓴红杉等10家8.5亿",
     "a_h": "❌",
     "sponsors": "招银国际",
-    "category": "机器人/谐波减速器"
+    "category": "机器人/谐波减速器",
+    "description": "谐波减速器龙头，人形机器人核心零部件，国产替代主力",
+    "est_market_cap_hkd": 4400000000.0,
+    "risk_flags": [
+      "接近50亿港股通门槛,上市后有观察窗口"
+    ]
   },
   {
     "name": "鲟龙科技",
@@ -232,7 +295,13 @@
     "cornerstone": "✅",
     "a_h": "❌",
     "sponsors": "-",
-    "category": "食品/养殖"
+    "category": "食品/养殖",
+    "description": "全球最大鱼子酱生产商，3次IPO冲刺失败(2012/2014/2024)",
+    "est_market_cap_hkd": 1800000000.0,
+    "risk_flags": [
+      "3次IPO失败",
+      "估值偏高(75.50HKD)"
+    ]
   },
   {
     "name": "江西生物",
@@ -251,6 +320,12 @@
     "cornerstone": "❌",
     "a_h": "❌",
     "sponsors": "-",
-    "category": "生物制品"
+    "category": "生物制品",
+    "description": "破伤风抗毒素+狂犬疫苗龙头，国内市场份额领先",
+    "est_market_cap_hkd": 1100000000.0,
+    "risk_flags": [
+      "市值较小",
+      "产品管线单一"
+    ]
   }
 ]
