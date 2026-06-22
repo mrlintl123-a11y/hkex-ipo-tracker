@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 HKEX IPO 冲突矩阵计算器
 ========================
@@ -16,6 +16,7 @@ HKEX IPO 冲突矩阵计算器
 """
 import json
 import sys
+sys.stdout.reconfigure(encoding='utf-8')
 from datetime import datetime, timedelta
 from collections import defaultdict
 from itertools import combinations

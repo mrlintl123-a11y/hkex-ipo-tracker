@@ -1,6 +1,8 @@
 ﻿import json, sys, os, argparse
 from datetime import datetime
 sys.stdout.reconfigure(encoding='utf-8')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from clawback_calculator import calc as _clawback_calc
 
 SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -17,6 +19,24 @@ def validate_and_enrich(raw):
         for i in active:
             i['days_before_close'] = max(0, (datetime.strptime(i['closing_date'], '%Y-%m-%d') - datetime.strptime(today_str, '%Y-%m-%d')).days)
             i['data_confidence'] = i.get('data_confidence', '\u26ab')
+        # --- 18A/18C redistribution (v4.1) ---
+        for i in flat:
+            ch = i.get('chapter', '')
+            redist = i.get('redistribution_pct', 0)
+            init_pct = i.get('public_initial_pct', 0.10) * 100
+            if ch in ('18A', '18C') and redist > 0:
+                margin_str = i.get('margin_multiple', '0')
+                margin_num = float(margin_str.replace('倍', '') if '倍' in margin_str else margin_str or 0)
+                result = _clawback_calc(ch, margin_num, redist, init_pct)
+                new_pct = result['final_pct'] / 100
+                orig_pct = i.get('public_initial_pct', 0.10)
+                if init_pct > 0 and new_pct > orig_pct:
+                    old_lots = i.get('public_lots', 0)
+                    i['_public_lots_initial'] = old_lots
+                    i['_redistribution_applied'] = result['mechanism']
+                    i['public_lots'] = int(old_lots * new_pct / orig_pct)
+                    i['public_initial_pct'] = new_pct
+        # --- end redistribution ---
         if active:
             matrix['groups'].append({'group_type': 'active', 'closing_dates': sorted(set(i['closing_date'] for i in active)), 'members': [i['name'] for i in active], 'ipo_count': len(active)})
         conf_summary = {}
@@ -24,8 +44,18 @@ def validate_and_enrich(raw):
             status = i.get('data_confidence', '\u26ab')
             conf_summary.setdefault(status, []).append(i['name'])
         key_dates = {}
-        for k in ['today_deadline', 'tomorrow_deadline', 'next_deadline']:
-            key_dates[k] = []
+        from datetime import timedelta
+        today_deadlines = [i for i in flat if i.get('closing_date') == today_str]
+        tomorrow_str = (datetime.strptime(today_str, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
+        tomorrow_deadlines = [i for i in flat if i.get('closing_date') == tomorrow_str]
+        future_ipos = [i for i in flat if i.get('closing_date', '') > tomorrow_str]
+        key_dates['today_deadline'] = [f"{i['name']}({i.get('code','')}) {i.get('closing_date','')} 16:00截止" for i in today_deadlines] or ['无']
+        key_dates['tomorrow_deadline'] = [f"{i['name']}({i.get('code','')}) {i.get('closing_date','')} 16:00截止" for i in tomorrow_deadlines] or ['无']
+        if future_ipos:
+            nd = sorted(future_ipos, key=lambda x: x.get('closing_date', ''))
+            key_dates['next_deadline'] = [f"{nd[0]['name']}({nd[0].get('code','')}) {nd[0].get('closing_date','')} 截止"]
+        else:
+            key_dates['next_deadline'] = ['暂无']
         return {'active_ipos': flat, 'conflict_matrix': matrix, 'data_confidence_summary': conf_summary, 'key_dates': key_dates, 'snapshot_date': today_str, 'snapshot_time': datetime.now().strftime('%H:%M'), '_auto_enriched': True}
     if isinstance(raw, dict) and 'active_ipos' in raw:
         return raw
@@ -165,6 +195,8 @@ def render_table(ipo_list):
         cs = cs_raw[:50] + '...' if isinstance(cs_raw, str) and len(cs_raw) > 50 else cs_raw
         ah = ipo.get('a_h', '\u274c')
         lots = fmt_lots(ipo.get('public_lots', '-'))
+        if ipo.get('_redistribution_applied'):
+            lots += ' \u2197'
         global_s = ipo.get('global_shares', 0)
         global_str = fmt_shares(global_s)
         days = ipo.get('days_before_close', '-')
@@ -268,17 +300,36 @@ for ipo, score in results:
 print()
 
 # --- Strategy ---
-print('## \U0001f386 资金分档策略')
+print("## \U0001f386 \u8d44\u91d1\u5206\u6863\u7b56\u7565")
 print()
-under_10k = [i for i in active if heat_score(i) > 2 and i.get('board_lot', 100) * (float(i.get('offer_price','0').replace(' HKD','').replace(' (最高)','').split('-')[0]) if '-' in i.get('offer_price','') else float(i.get('offer_price','0').replace(' HKD','').replace(' (最高)','') or '100')) < 10000]
-mid_10_50k = [i for i in active if heat_score(i) > 2]
-for tier in ['<1万港元', '1-5万港元', '5-50万港元', '>50万港元']:
-    candidates = [i for i in active if heat_score(i) >= 2.5]
-    if candidates:
-        names_str = '\u3001'.join(f"{i['name']}({i.get('board_lot',0)}\u00d7{i.get('offer_price','-')})" for i in candidates[:4])
-        print(f'- **{tier}**：{names_str}')
-print()
+def _entry_fee(ipo):
+    price_str = ipo.get("offer_price", "0").replace(" HKD", "").replace(" (\u6700\u9ad8)", "")
+    if "-" in price_str:
+        p = float(price_str.split("-")[0])
+    else:
+        try:
+            p = float(price_str)
+        except:
+            p = 100000
+    return p * ipo.get("board_lot", 100)
 
+tier_budgets = [
+    ("\u22641\u4e07\u6e2f\u5143", 10000),
+    ("1-5\u4e07\u6e2f\u5143", 50000),
+    ("5-50\u4e07\u6e2f\u5143", 500000),
+    (">50\u4e07\u6e2f\u5143", float("inf")),
+]
+for tier_name, budget in tier_budgets:
+    candidates = sorted(
+        [i for i in active if heat_score(i) >= 2.0 and _entry_fee(i) <= budget],
+        key=lambda x: heat_score(x), reverse=True
+    )
+    if candidates:
+        names_str = "、".join(f"{i["name"]}({i.get("board_lot",0)}×{i.get("offer_price","-")})" for i in candidates[:5])
+        print(f"- **{tier_name}**\uff1a{names_str}")
+    else:
+        print(f"- **{tier_name}**\uff1a\u65e0\u5408\u9002\u6807\u7684")
+print()
 # --- Key dates ---
 print('## \U0001f514 关键时间节点')
 print()
@@ -299,4 +350,8 @@ if active_notes:
 if new_notes:
     names2 = '\u3001'.join(i['name'] for i in new_notes)
     print(f'> \u26a0\ufe0f {names2} 刚启动招股，暂无孖展数据，等 1-2 天再判断')
+redist_stocks = [i for i in ipos if i.get('_redistribution_applied')]
+if redist_stocks:
+    notes = '、'.join(f"{i['name']}({i.get('_redistribution_applied','')})" for i in redist_stocks)
+    print(f'> \U0001f4cc 18A/18C重新分配：{notes}')
 print(f'> \u2139\ufe0f 数据来源：智通财经/金吾资讯/LiveReport/港交所披露易 | 快照 {snap} {snap_time}')

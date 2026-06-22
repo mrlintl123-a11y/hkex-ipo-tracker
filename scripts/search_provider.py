@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Search Provider — 可插拔的搜索后端适配器
 
@@ -15,6 +15,7 @@ import json
 import os
 import subprocess
 import sys
+sys.stdout.reconfigure(encoding='utf-8')
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, asdict
 from typing import Optional

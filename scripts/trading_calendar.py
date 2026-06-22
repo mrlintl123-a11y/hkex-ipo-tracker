@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 港股交易日历判断
 ================
@@ -16,6 +16,7 @@
 """
 import json
 import sys
+sys.stdout.reconfigure(encoding='utf-8')
 import argparse
 from datetime import datetime, date
 from pathlib import Path

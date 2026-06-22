@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 HKEX IPO 数据抓取器（多后端适配版）
 ====================================
@@ -24,6 +24,7 @@ HKEX IPO 数据抓取器（多后端适配版）
 import json
 import re
 import sys
+sys.stdout.reconfigure(encoding='utf-8')
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
