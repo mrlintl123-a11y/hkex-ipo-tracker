@@ -1,440 +1,298 @@
 #!/usr/bin/env python3
-"""
-金吾资讯 IPO 详情抓取器 (Playwright-based)
-============================================
+"""Scrape active HKEX IPO data from Jinwu Finance with Playwright."""
 
-直接访问 ipo.jinwucj.com 的个股详情页，提取结构化 IPO 数据。
-解决 fetch_active_ipos.py 纯文本正则无法获取 JS 渲染数据的痛点。
+from __future__ import annotations
 
-用法：
-    # 抓取所有正在招股的公司详情
-    python scrape_jinwucj.py
-
-    # 抓取指定代码的详情
-    python scrape_jinwucj.py --codes 02697,03952,00668
-
-    # 输出到文件
-    python scrape_jinwucj.py --output ipos.json
-
-输出：标准化 JSON 数组，每个元素含招股价范围、每手股数、入场费、
-      招股截止日、上市日、孖展倍数、市值等字段。
-"""
-
+import argparse
 import json
 import re
 import sys
-import argparse
 from datetime import datetime
+from typing import Dict, List, Optional
 
-sys.stdout.reconfigure(encoding='utf-8')
-
-# Global name map populated from getNewIssueCalendar API
-# Global name map populated from getNewIssueCalendar API
-_NAME_MAP = {
-    # Common active HKEX IPOs - populated live via API, fallback if API fails
-    "02697": "真健康医疗─B",
-    "03952": "来福谐波",
-    "06715": "鲟龙科技",
-    "06915": "江西生物",
-    "00668": "安克创新",
-    "01191": "海光芯正",
-    "02672": "白鸽在线",
-    "09637": "礼邦医药─B",
-    "02335": "麦科医药─B",
-    "06106": "仙工智能",
-    "01688": "领益智造",
-    "01956": "中科闻歌",
-    "02272": "科拓股份",
-    "03661": "圣邦股份",
-    "09630": "芯碁微装",
-    "06067": "星源材质",
-    "06132": "华健未来─B",
-    "01392": "海清智元",
-}  # Live API will override these if available
-def _fetch_name_map():
-    """????? API ????->?????"""
-    global _NAME_MAP
-    if _NAME_MAP:
-        return _NAME_MAP
-    try:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            resp = page.goto(
-                "https://ipo.jinwucj.com/api/nsIssueCalendarV/getNewIssueCalendar",
-                wait_until="domcontentloaded", timeout=15000
-            )
-            if resp and resp.ok:
-                data = resp.json()
-                body = data.get("body", {})
-                for section in ("underSubscription", "toBeListed", "listing"):
-                    for ipo in body.get(section, []):
-                        sym = ipo.get("symbol", "").replace(".hk", "")
-                        name = ipo.get("stockName", "")
-                        if sym and name:
-                            _NAME_MAP[sym] = name
-            browser.close()
-        if _NAME_MAP:
-            print(f"  [API] ??? {len(_NAME_MAP)} ??????", file=sys.stderr)
-    except Exception as e:
-        print(f"  [!] ????????: {e}", file=sys.stderr)
-    return _NAME_MAP
+from ipo_schema import (
+    UNKNOWN,
+    normalize_ipo,
+    parse_market_cap_hkd,
+    parse_percentage,
+    parse_share_count,
+)
 
 
-# ---------------------------------------------------------------------------
-# IPO 详情提取（从金吾资讯个股详情页 body text）
-# ---------------------------------------------------------------------------
+sys.stdout.reconfigure(encoding="utf-8")
 
-def _ex(pattern: str, text: str, flags=0) -> str:
-    """安全正则提取"""
-    m = re.search(pattern, text, flags)
-    return m.group(1).strip() if m else ""
+CALENDAR_URL = "https://ipo.jinwucj.com/"
+DETAIL_URL = "https://ipo.jinwucj.com/stock/stockDetails/prospectus/{code}.hk"
 
 
-def extract_detail(text: str, code: str = "", name: str = "") -> dict:
-    """
-    从金吾资讯个股详情页 body text 提取关键字段。
+def _extract(pattern: str, text: str, flags: int = 0) -> str:
+    match = re.search(pattern, text, flags)
+    return match.group(1).strip() if match else ""
 
-    金吾资讯详情页 URL 格式:
-        https://ipo.jinwucj.com/stock/stockDetails/prospectus/{code}.hk
 
-    页面关键区域结构（纯文本）:
-        发行资料
-        招股日期： 2026-06-22 至 2026-06-25
-        公布售股结果日期： 2026-06-29
-        上市日期： 2026-06-30
-        招股价范围： 119.3~135.4 港币
-        每手股数： 20 股
-        入场费： 2735.3 港币
-        所属行业： 制药与生物科技
-        总发售数量： 356.47 万股
-        预计市值： 45.40 亿
-    """
-    info = {
+def _extract_company_name(text: str, code: str) -> str:
+    escaped = re.escape(code)
+    patterns = (
+        rf"资料来源\s*[：:]\s*(.+?)\s*\({escaped}\)",
+        rf'"stockName"\s*:\s*"([^"]+)".*?"symbol"\s*:\s*"{escaped}(?:\.hk)?"',
+        rf'"symbol"\s*:\s*"{escaped}(?:\.hk)?".*?"stockName"\s*:\s*"([^"]+)"',
+    )
+    for pattern in patterns:
+        value = _extract(pattern, text, re.S)
+        if value:
+            return re.sub(r"\s+", " ", value).strip()
+    return ""
+
+
+def _extract_fundraising(text: str) -> str:
+    match = re.search(
+        r"全球发售所得款项净额.*?约\s*([\d,.]+)\s*(百万|亿)港元",
+        text,
+        re.S,
+    )
+    if not match:
+        return UNKNOWN
+    amount = float(match.group(1).replace(",", ""))
+    unit = match.group(2)
+    amount_yi = amount / 100 if unit == "百万" else amount
+    return f"{amount_yi:.2f}亿港元"
+
+
+def _extract_cornerstone(text: str) -> str:
+    if re.search(r"(?:未引入|没有|无)基石(?:投资者|投資者)?", text):
+        return "❌ 无基石"
+    value = _extract(
+        r"基石(?:投资者|投資者)[：:]\s*(.+?)(?:\n|绿鞋|超额配售|保荐人|$)",
+        text,
+        re.S,
+    )
+    value = re.sub(r"\s+", " ", value).strip(" 。")
+    return f"✅ {value}" if value else UNKNOWN
+
+
+def _extract_greenshoe(text: str) -> str:
+    if re.search(r"(?:无|不设|没有)超额(?:配售|配股)(?:权|權)", text):
+        return "❌ 无绿鞋"
+    percent = _extract(
+        r"([\d.]+)%[^。\n]{0,40}超额(?:配售|配股)(?:权|權)", text
+    ) or _extract(
+        r"超额(?:配售|配股)(?:权|權)[^。\n]{0,40}?([\d.]+)%", text
+    )
+    if percent:
+        return f"✅ {percent}%"
+    if re.search(r"超额(?:配售|配股)(?:权|權)", text):
+        return "✅ 有（比例待核实）"
+    return UNKNOWN
+
+
+def _extract_a_h(text: str) -> str:
+    code_match = re.search(r"(\d{6})\s*\.\s*(SH|SZ)", text, re.I)
+    if code_match:
+        return f"✅ A+H（{code_match.group(1)}.{code_match.group(2).upper()}）"
+    if re.search(r"\bA\s*\+\s*H\b|A股及H股|两地上市", text, re.I):
+        return "✅ A+H"
+    if re.search(r"(?:非A\+H|纯H股)", text, re.I):
+        return "❌ 纯H股"
+    return UNKNOWN
+
+
+def extract_detail(text: str, code: str = "", name: str = "") -> Dict:
+    """Extract a canonical IPO record from one rendered detail-page body."""
+    code = code.replace(".hk", "").replace(".HK", "")
+    company_name = name or _extract_company_name(text, code)
+
+    start = _extract(r"招股日期[：:]\s*(\d{4}-\d{2}-\d{2})", text)
+    closing = _extract(
+        r"招股日期[：:]\s*\d{4}-\d{2}-\d{2}\s*至\s*(\d{4}-\d{2}-\d{2})",
+        text,
+    )
+    result_date = _extract(
+        r"公布(?:售股|配售)?结果日期[：:]\s*(\d{4}-\d{2}-\d{2})", text
+    )
+    listing_date = _extract(r"上市日期[：:]\s*(\d{4}-\d{2}-\d{2})", text)
+
+    price_low = _extract(r"招股价(?:范围)?[：:]\s*([\d.]+)", text)
+    price_high = _extract(
+        r"招股价(?:范围)?[：:]\s*[\d.]+\s*[~–-]\s*([\d.]+)", text
+    )
+    offer_price = (
+        f"{price_low}-{price_high} HKD"
+        if price_low and price_high
+        else f"{price_low} HKD" if price_low else UNKNOWN
+    )
+
+    lot_text = _extract(r"每手股数[：:]\s*([\d,]+)", text)
+    board_lot = int(lot_text.replace(",", "")) if lot_text else 0
+    fee_text = _extract(r"入场费[：:]\s*([\d,.]+)", text)
+    entry_fee = float(fee_text.replace(",", "")) if fee_text else 0.0
+
+    total_shares = _extract(
+        r"总发售数量[：:]\s*([\d,.]+\s*[万亿]?\s*股)", text
+    )
+    market_cap_text = _extract(
+        r"预计市值[：:]\s*([\d,.]+\s*[万亿]?)(?:\s*港元)?", text
+    )
+    industry = _extract(
+        r"所属行业[：:]\s*(.+?)\s+总发售数量[：:]", text, re.S
+    )
+    industry = re.sub(r"\s+", " ", industry).strip() or UNKNOWN
+
+    margin = _extract(
+        r"认购倍数[（(](?:预估|實際|实际)[)）][：:]\s*([\d,.]+)\s*倍", text
+    )
+    margin_multiple = f"{margin.replace(',', '')}倍" if margin else "暂无"
+    update_dates = re.findall(
+        r"数据更新[：:]\s*(\d{4}-\d{2}-\d{2}\s+[\d:]+)", text
+    )
+    margin_data_date = max(update_dates) if update_dates else ""
+
+    public_pct_text = _extract(r"公开发售[：:]\s*([\d.]+%)", text)
+    public_pct = parse_percentage(public_pct_text, default=0.10)
+    global_shares = parse_share_count(total_shares)
+    public_lots = int(global_shares * public_pct / board_lot) if board_lot else 0
+
+    sponsors = _extract(
+        r"(?:联席|独家)?保荐人[：:]\s*(.+?)(?:\n|基石|超额配售|$)",
+        text,
+        re.S,
+    )
+    sponsors = re.sub(r"\s+", " ", sponsors).strip(" 。") or UNKNOWN
+
+    record = {
         "code": code,
-        "source": "金吾资讯详情页",
+        "name": company_name or UNKNOWN,
+        "source": "金吾资讯（基础资料）；捷利交易宝（孖展，经金吾汇总）",
         "scraped_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "subscription_start": start,
+        "closing_date": closing,
+        "subscription_period": f"{start} 至 {closing}" if start and closing else UNKNOWN,
+        "result_date": result_date,
+        "listing_date": listing_date,
+        "offer_price": offer_price,
+        "board_lot": board_lot,
+        "entry_fee": entry_fee,
+        "total_shares": total_shares,
+        "global_shares": global_shares,
+        "market_cap": market_cap_text,
+        "est_market_cap_hkd": parse_market_cap_hkd(market_cap_text),
+        "industry": industry,
+        "description": industry,
+        "margin_multiple": margin_multiple,
+        "margin_data_date": margin_data_date,
+        "public_initial_pct": public_pct,
+        "public_lots": public_lots,
+        "cornerstone": _extract_cornerstone(text),
+        "greenshoe": _extract_greenshoe(text),
+        "a_h": _extract_a_h(text),
+        "sponsors": sponsors,
+        "fundraising": _extract_fundraising(text),
     }
+    return normalize_ipo(record)
 
-    # 招股日期区间 -> 截止日
-    sub_start = _ex(r'招股日期[：:]\s*(\d{4}-\d{2}-\d{2})', text)
-    sub_end = _ex(
-        r'招股日期[：:]\s*\d{4}-\d{2}-\d{2}\s*至\s*(\d{4}-\d{2}-\d{2})',
-        text
-    )
-    # 公司名
-    info["name"] = name
-    info["subscription_start"] = sub_start
-    info["closing_date"] = sub_end  # 这才是真正的截止日！
-    info["subscription_period"] = (
-        f"{sub_start[5:]}/{sub_end[5:]}" if sub_start and sub_end else ""
-    )
 
-    # 配发结果日
-    info["result_date"] = _ex(
-        r'公布(?:售股)?结果日期[：:]\s*(\d{4}-\d{2}-\d{2})', text
-    )
+def discover_active_ipos(page) -> List[Dict[str, str]]:
+    """Discover under-subscription IPO codes and names from the live calendar API."""
+    calendar: Dict = {}
 
-    # 上市日
-    info["listing_date"] = _ex(r'上市日期[：:]\s*(\d{4}-\d{2}-\d{2})', text)
-
-    # 招股价范围
-    price_low = _ex(r'招股价(?:范围)?[：:]\s*([\d.]+)', text)
-    price_high = _ex(
-        r'招股价(?:范围)?[：:]\s*[\d.]+\s*[~–\-]\s*([\d.]+)', text
-    )
-    if price_low and price_high:
-        info["offer_price"] = f"{price_low}-{price_high} HKD"
-    elif price_low:
-        info["offer_price"] = f"{price_low} HKD"
-    else:
-        info["offer_price"] = ""
-
-    # 每手股数
-    lot_str = _ex(r'每手股数[：:]\s*([\d,]+)', text)
-    info["board_lot"] = int(lot_str.replace(",", "")) if lot_str else 0
-
-    # 入场费
-    fee_str = _ex(r'入场费[：:]\s*([\d,.]+)', text)
-    if fee_str:
-        info["entry_fee"] = float(fee_str.replace(",", ""))
-    else:
-        info["entry_fee"] = 0.0
-
-    # 总发售数量
-    info["total_shares"] = _ex(
-        r'总发售数量[：:]\s*([\d,.]+(?:\s*[万亿]?股))', text
-    )
-
-    # 预计市值
-    cap_str = _ex(r'预计市值[：:]\s*([\d,.]+)', text)
-    if cap_str:
-        info["market_cap"] = float(cap_str.replace(",", ""))
-    else:
-        info["market_cap"] = 0.0
-
-    # 所属行业
-    info["industry"] = _ex(r'所属行业[：:]\s*(.+?)(?:\s{2,}|\n|$)', text)
-
-    # 孖展认购倍数
-    margin_str = _ex(r'认购倍数[（(]预估[)）][：:]\s*([\d.]+)', text)
-    if margin_str:
-        info["margin_multiple"] = margin_str + "倍"
-    else:
-        # fallback
-        alt = _ex(r'(\d+\.?\d*)\s*倍', text)
-        info["margin_multiple"] = (alt + "倍") if alt else ""
-
-    # 公开发售/国际配售比例
-    pub_pct = _ex(r'公开发售[：:]\s*([\d.]+%)', text)
-    intl_pct = _ex(r'国际配售[：:]\s*([\d.]+%)', text)
-    if pub_pct:
-        try:
-            info["public_initial_pct"] = float(pub_pct.replace("%", "")) / 100
-        except ValueError:
-            info["public_initial_pct"] = 0.10
-    else:
-        info["public_initial_pct"] = 0.10
-
-    # 基石投资者
-    if "基石投资者" in text:
-        info["cornerstone"] = "yes"
-    elif "未引入基石" in text or "无基石" in text:
-        info["cornerstone"] = "no"
-    else:
-        info["cornerstone"] = ""
-
-    # 绿鞋
-    if "超额配售" in text:
-        if "未授出" in text:
-            info["greenshoe"] = "no"
-        else:
-            pct = _ex(r'(\d+)%\s*(?:超额配售|绿鞋)', text)
-            info["greenshoe"] = f"yes {pct}%" if pct else "yes"
-    else:
-        info["greenshoe"] = ""
-
-    # A+H
-    if "A+H" in text or "两地上市" in text:
-        info["a_h"] = "A+H"
-    else:
-        # check if A-share code present
-        a_code = _ex(r'(\d{6})\s*\.\s*SZ', text) or _ex(r'(\d{6})\s*\.\s*SH', text)
-        if a_code:
-            info["a_h"] = f"A+H({a_code})"
-        else:
-            info["a_h"] = ""
-
-    # 保荐人
-    sp = _ex(r'联席保荐人[：:]\s*(.+?)(?:。|\n|$)', text)
-    if not sp:
-        sp = _ex(r'独家保荐人[：:]\s*(.+?)(?:。|\n|$)', text)
-    if not sp:
-        sp = _ex(r'保荐人[：:]\s*(.+?)(?:。|\n|$)', text)
-    info["sponsors"] = sp
-
-    # 募资净额
-    fund = _ex(
-        r'所得款项净额[约]?\s*[：:]*\s*[约]?\s*([\d,.]+(?:\s*(?:百万|亿)港元)?)',
-        text
-    )
-    if fund:
-        # Normalize: try to convert to 亿
-        if "百万" in fund:
+    def on_response(response) -> None:
+        if response.url.endswith("getNewIssueCalendar") and response.ok:
             try:
-                val = float(fund.replace(",", "").replace("百万港元", "").strip())
-                info["fundraising"] = f"{val/10:.2f}亿港元"
-            except:
-                info["fundraising"] = fund
-        elif "亿" in fund:
-            info["fundraising"] = fund
-        else:
-            info["fundraising"] = fund + "港元"
-    else:
-        info["fundraising"] = ""
+                calendar.update(response.json())
+            except Exception:
+                return
 
-    # 数据可信度 marker
-    info["data_confidence"] = "🟡"
+    page.on("response", on_response)
+    page.goto(CALENDAR_URL, wait_until="networkidle", timeout=40_000)
+    page.wait_for_timeout(2_000)
 
-    # 计算公开手数（近似）
-    if info.get("total_shares") and info.get("board_lot", 0) > 0 and info.get("public_initial_pct", 0) > 0:
-        ts_match = re.search(r'([\d,.]+)', info["total_shares"])
-        if ts_match:
-            ts_val = float(ts_match.group(1).replace(",", ""))
-            # 万 -> *10000
-            if "万" in info["total_shares"]:
-                ts_val *= 10000
-            info["public_lots"] = int(
-                ts_val * info["public_initial_pct"] / info["board_lot"]
-            )
-    if "public_lots" not in info:
-        info["public_lots"] = 10000  # fallback
-
-    return info
+    body = calendar.get("body", {}) if isinstance(calendar, dict) else {}
+    records = []
+    for ipo in body.get("underSubscription", []):
+        symbol = str(ipo.get("symbol", ""))
+        code = re.sub(r"\.hk$", "", symbol, flags=re.I)
+        if code:
+            records.append({"code": code, "name": str(ipo.get("stockName", ""))})
+    return records
 
 
-# ---------------------------------------------------------------------------
-# 金吾资讯主列表发现
-# ---------------------------------------------------------------------------
-
-def discover_active_codes() -> list[str]:
-    """从金吾资讯主页发现正在招股的股票代码列表。
-
-    使用 API: /api/nsIssueCalendarV/getNewIssueCalendar
-    返回 underSubscription 列表。
-
-    需要 Playwright 获取完整响应（API 返回被截断时回退到主页 DOM 解析）。
-    """
+def scrape_all(
+    codes: Optional[List[str]] = None, timeout: int = 25_000
+) -> List[Dict]:
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
         print(
-            "[!] Playwright 未安装，无法发现活跃 IPO 列表。"
-            "请用 --codes 手动指定。"
-            "安装: pip install playwright && playwright install chromium",
+            "[!] 缺少 Playwright。运行：python3 -m pip install -r requirements.txt "
+            "&& python3 -m playwright install chromium",
             file=sys.stderr,
         )
         return []
 
-    codes = []
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
-
-        # Method 1: API interception
-        api_data = {}
-        def _on_response(resp):
-            if resp.url.endswith("getNewIssueCalendar") and resp.ok:
-                try:
-                    body = resp.json()
-                    api_data["calendar"] = body
-                except:
-                    pass
-
-        page.on("response", _on_response)
-        page.goto("https://ipo.jinwucj.com/", wait_until="networkidle", timeout=30000)
-        page.wait_for_timeout(5000)
-
-        if "calendar" in api_data:
-            body = api_data["calendar"].get("body", {})
-            for ipo in body.get("underSubscription", []):
-                sym = ipo.get("symbol", "")
-                if sym.endswith(".hk"):
-                    codes.append(sym.replace(".hk", ""))
-        browser.close()
-
-    return codes
-
-
-# ---------------------------------------------------------------------------
-# 主抓取逻辑
-# ---------------------------------------------------------------------------
-
-def scrape_all(codes: list[str] | None = None, timeout: int = 25000) -> list[dict]:
-    """批量抓取所有指定代码的详情页"""
-    if codes is None:
-        codes = discover_active_codes()
-        if not codes:
-            print("[!] 未发现活跃 IPO，请用 --codes 手动指定", file=sys.stderr)
+    results = []
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        discovery_page = browser.new_page()
+        discovered = discover_active_ipos(discovery_page)
+        discovery_page.close()
+        name_map = {item["code"]: item["name"] for item in discovered}
+        targets = codes or [item["code"] for item in discovered]
+        if not targets:
+            print("[!] 实时日历未发现正在招股的新股", file=sys.stderr)
+            browser.close()
             return []
 
-    print(f"🔍 准备抓取 {len(codes)} 只新股详情: {codes}", file=sys.stderr)
-
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        print("FATAL: Playwright not installed. Run: npx playwright install chromium", file=sys.stderr)
-        sys.exit(1)
-
-    _fetch_name_map()  # pre-load name mapping
-    results = []
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        for code in codes:
+        print(f"🔍 准备抓取 {len(targets)} 只新股详情: {targets}", file=sys.stderr)
+        for code in targets:
             page = browser.new_page()
             try:
-                url = (
-                    f"https://ipo.jinwucj.com/stock/stockDetails/prospectus/"
-                    f"{code}.hk"
-                )
                 print(f"  📄 {code} ...", file=sys.stderr, end=" ")
-                page.goto(url, wait_until="networkidle", timeout=timeout)
-                page.wait_for_timeout(3000)
+                page.goto(
+                    DETAIL_URL.format(code=code),
+                    wait_until="networkidle",
+                    timeout=timeout,
+                )
+                page.wait_for_timeout(2_000)
                 text = page.text_content("body") or ""
-                stock_name = _NAME_MAP.get(code, ""); detail = extract_detail(text, code=code, name=stock_name)
-                # Only include if we got meaningful data
-                if detail.get("closing_date") or detail.get("offer_price"):
+                detail = extract_detail(text, code=code, name=name_map.get(code, ""))
+                if detail.get("closing_date") and detail.get("offer_price") != UNKNOWN:
                     results.append(detail)
                     print(
-                        f"✅ 招股价={detail.get('offer_price','?')} "
-                        f"截止={detail.get('closing_date','?')}",
+                        f"✅ {detail['name']} 招股价={detail['offer_price']} "
+                        f"截止={detail['closing_date']}",
                         file=sys.stderr,
                     )
                 else:
-                    print("⚠️ 数据不完整，跳过", file=sys.stderr)
-            except Exception as e:
-                print(f"❌ {e}", file=sys.stderr)
+                    print("⚠️ 关键字段不完整，跳过", file=sys.stderr)
+            except Exception as exc:
+                print(f"❌ {exc}", file=sys.stderr)
             finally:
                 page.close()
         browser.close()
-
     return results
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="金吾资讯 IPO 详情抓取器 (Playwright)"
-    )
-    parser.add_argument(
-        "--codes",
-        default=None,
-        help="逗号分隔的股票代码，如 02697,03952,00668。不指定则自动发现。",
-    )
-    parser.add_argument(
-        "--output", "-o",
-        default=None,
-        help="输出 JSON 文件路径（默认 stdout）",
-    )
-    parser.add_argument(
-        "--timeout",
-        type=int,
-        default=25000,
-        help="每个页面加载超时 (ms)，默认 25000",
-    )
+def main() -> int:
+    parser = argparse.ArgumentParser(description="金吾资讯 HKEX IPO 实时抓取器")
+    parser.add_argument("--codes", help="逗号分隔的股票代码；默认自动发现")
+    parser.add_argument("--output", "-o", help="输出 JSON 文件；默认 stdout")
+    parser.add_argument("--timeout", type=int, default=25_000, help="单页超时毫秒数")
     args = parser.parse_args()
 
-    # Pre-check: Playwright must be available
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        print("FATAL: Playwright not installed.", file=sys.stderr)
-        print("Install: npx playwright install chromium", file=sys.stderr)
-        print("Or use Node REPL with Playwright to scrape manually.", file=sys.stderr)
-        sys.exit(1)
-
-    codes = None
-    if args.codes:
-        codes = [c.strip() for c in args.codes.split(",") if c.strip()]
-
+    codes = [item.strip() for item in args.codes.split(",")] if args.codes else None
     results = scrape_all(codes=codes, timeout=args.timeout)
-
     if not results:
-        print("❌ 未获取到任何有效 IPO 数据", file=sys.stderr)
-        sys.exit(1)
+        print("❌ 未获取到有效 IPO 数据", file=sys.stderr)
+        return 1
 
     output = json.dumps(results, ensure_ascii=False, indent=2)
     if args.output:
-        with open(args.output, "w", encoding="utf-8") as f:
-            f.write(output)
-        print(f"✅ 已写入 {args.output} ({len(results)} 只)", file=sys.stderr)
+        with open(args.output, "w", encoding="utf-8") as handle:
+            handle.write(output)
+        print(f"✅ 已写入 {args.output}（{len(results)}只）", file=sys.stderr)
     else:
         print(output)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
