@@ -344,8 +344,8 @@ def scrape_all(codes: list[str] | None = None, timeout: int = 25000) -> list[dic
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
-        print("[!] Playwright 未安装", file=sys.stderr)
-        return []
+        print("FATAL: Playwright not installed. Run: npx playwright install chromium", file=sys.stderr)
+        sys.exit(1)
 
     _fetch_name_map()  # pre-load name mapping
     results = []
@@ -407,6 +407,15 @@ def main():
         help="每个页面加载超时 (ms)，默认 25000",
     )
     args = parser.parse_args()
+
+    # Pre-check: Playwright must be available
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("FATAL: Playwright not installed.", file=sys.stderr)
+        print("Install: npx playwright install chromium", file=sys.stderr)
+        print("Or use Node REPL with Playwright to scrape manually.", file=sys.stderr)
+        sys.exit(1)
 
     codes = None
     if args.codes:
