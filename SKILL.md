@@ -27,31 +27,45 @@ python3 scripts/run_report.py
 该命令会依次：
 
 1. 检查港股交易日。
-2. 从金吾资讯实时发现正在招股的新股并逐只抓取详情。
-3. 生成 `fresh_ipos.json`、`ipo_report.md` 和 `ipo_report.html`。
-4. 将完整 Markdown 报告输出到 stdout。
+2. 从金吾资讯实时发现正在招股的新股并逐只抓取详情，同时保存原始页面文本。
+3. 按股票代码检索港交所披露易，自动下载招股书并补全绿鞋、基石、A+H、保荐人和募资净额。
+4. 生成字段级来源记录和数据链路自查结果。
+5. 生成 `fresh_ipos.json`、`ipo_report.md` 和 `ipo_report.html`，并将完整 Markdown 输出到 stdout。
+
+主要审计产物：
+
+- `scraped_ipos.json`：摘要源抓取阶段。
+- `raw/jinwu/`：金吾日历响应和个股详情原文。
+- `raw/hkex/`：港交所招股书 PDF 和提取文本。
+- `official_enrichment_audit.json`：港交所文件发现及字段解析结果。
+- `data_audit.json` / `data_audit.md`：获取、解析、规范化和渲染全链路检查。
 
 若一键流程失败，可逐步执行：
 
 ```bash
 python3 scripts/trading_calendar.py
-python3 scripts/scrape_jinwucj.py --output fresh_ipos.json
+python3 scripts/scrape_jinwucj.py --output scraped_ipos.json --raw-dir raw/jinwu
+python3 scripts/fetch_hkex_official.py --input scraped_ipos.json --output fresh_ipos.json --raw-dir raw/hkex
 python3 scripts/generate_report.py --input fresh_ipos.json --output ipo_report.md
 python3 scripts/generate_visual.py --input fresh_ipos.json --output ipo_report.html
+python3 scripts/audit_pipeline.py --input fresh_ipos.json --scraped scraped_ipos.json --report ipo_report.md --output-json data_audit.json --output-md data_audit.md
 ```
+
+仅在港交所临时不可访问且用户明确接受降级结果时，才使用 `python3 scripts/run_report.py --skip-official`。
 
 ## 输出要求
 
 - 将 `generate_report.py` 或 `run_report.py` 输出的完整 Markdown 原样展示，不省略任何 IPO。
 - 附上命令最后打印的 `HTML_REPORT` 实际路径，不得写死 Windows 或用户目录。
-- 所有表格单元格必须有值；未从来源确认的字段显示“待核实”。
-- 不得把“待核实”解释为“没有”，也不得让未知维度参与热度评分。
+- 所有表格单元格必须有值；未确认字段必须显示具体状态，例如“未找到港交所招股书”“原文存在但解析失败”或“来源冲突”，不得只写笼统的“待核实”。
+- 不得把未知解释为“没有”，也不得让未知维度参与热度评分。
 - 报告必须注明真实使用的数据来源与抓取时间，不得声称未执行的多源验证。
+- 港交所招股书自动补全失败时，必须保留失败原因和官方检索时间，不得用摘要源推断替代官方确认。
 
 ## 数据质量
 
-主数据源为金吾资讯；孖展数据由其汇总自捷利交易宝。港交所披露易是招股书、配发结果、基石与绿鞋信息的权威来源。若用户要求权威核验，优先用港交所文件补充“待核实”字段，再重新生成报告。
+金吾资讯用于发现正在招股标的及获取动态摘要；孖展数据由其汇总自捷利交易宝。港交所披露易是招股书、配发结果、基石与绿鞋信息的权威来源，标准流程默认执行港交所招股书核验。
 
-字段规范与公式见 `references/ipo-fields.md`，数据源选择见 `references/data-sources.md`。
+字段规范与公式见 `references/ipo-fields.md`，数据源选择见 `references/data-sources.md`，链路状态与自查规则见 `references/data-quality.md`。
 
 本 skill 仅汇总公开信息，不构成投资建议。

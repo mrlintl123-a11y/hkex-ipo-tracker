@@ -33,6 +33,12 @@ secrets.json
 Thumbs.db
 ipos.json
 fresh_ipos.json
+scraped_ipos.json
 ipo_report.html
+ipo_report.md
+official_enrichment_audit.json
+data_audit.json
+data_audit.md
+raw/
 preview.png
 queries.json

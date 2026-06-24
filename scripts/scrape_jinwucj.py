@@ -8,10 +8,14 @@ import json
 import re
 import sys
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from ipo_schema import (
+    PROVENANCE_FIELDS,
     UNKNOWN,
+    is_unknown,
+    make_field_meta,
     normalize_ipo,
     parse_market_cap_hkd,
     parse_percentage,
@@ -23,6 +27,27 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 CALENDAR_URL = "https://ipo.jinwucj.com/"
 DETAIL_URL = "https://ipo.jinwucj.com/stock/stockDetails/prospectus/{code}.hk"
+
+FIELD_KEYWORDS = {
+    "name": ("资料来源", "stockName"),
+    "subscription_start": ("招股日期",),
+    "closing_date": ("招股日期",),
+    "result_date": ("结果日期",),
+    "listing_date": ("上市日期",),
+    "offer_price": ("招股价", "發售價"),
+    "board_lot": ("每手股数", "每手股數"),
+    "entry_fee": ("入场费", "入場費"),
+    "global_shares": ("总发售数量", "總發售數量"),
+    "public_initial_pct": ("公开发售", "公開發售"),
+    "margin_multiple": ("认购倍数", "認購倍數"),
+    "cornerstone": ("基石投资者", "基石投資者"),
+    "greenshoe": ("超额配售", "超額配售", "超额配股", "超額配股"),
+    "a_h": ("A+H", "A股及H股", "两地上市", "兩地上市"),
+    "industry": ("所属行业", "所屬行業"),
+    "est_market_cap_hkd": ("预计市值", "預計市值"),
+    "sponsors": ("保荐人", "保薦人"),
+    "fundraising": ("所得款项净额", "所得款項淨額"),
+}
 
 
 def _extract(pattern: str, text: str, flags: int = 0) -> str:
@@ -96,7 +121,43 @@ def _extract_a_h(text: str) -> str:
     return UNKNOWN
 
 
-def extract_detail(text: str, code: str = "", name: str = "") -> Dict:
+def _build_field_meta(record: Dict, text: str, source_url: str, retrieved_at: str) -> Dict:
+    metadata = {}
+    derived_fields = {"global_shares", "public_lots"}
+    for field in PROVENANCE_FIELDS:
+        value = record.get(field)
+        if not is_unknown(value) and value not in {0, 0.0}:
+            status = "derived" if field in derived_fields else "collected"
+            note = "由摘要页字段计算" if status == "derived" else ""
+            if field == "greenshoe" and "比例待核实" in str(value):
+                status = "partial"
+                note = "摘要页确认设有超额配售权，但未提取比例"
+        else:
+            keywords = FIELD_KEYWORDS.get(field, ())
+            status = (
+                "parse_failed"
+                if keywords and any(keyword in text for keyword in keywords)
+                else "authoritative_source_not_fetched"
+            )
+            note = (
+                "摘要页出现字段关键词，但当前规则未提取出值"
+                if status == "parse_failed"
+                else "摘要页未提供完整值，尚未核验港交所招股书"
+            )
+        metadata[field] = make_field_meta(
+            value=value,
+            status=status,
+            source_name="金吾资讯",
+            source_url=source_url,
+            retrieved_at=retrieved_at,
+            note=note,
+        )
+    return metadata
+
+
+def extract_detail(
+    text: str, code: str = "", name: str = "", source_url: str = ""
+) -> Dict:
     """Extract a canonical IPO record from one rendered detail-page body."""
     code = code.replace(".hk", "").replace(".HK", "")
     company_name = name or _extract_company_name(text, code)
@@ -158,11 +219,13 @@ def extract_detail(text: str, code: str = "", name: str = "") -> Dict:
     )
     sponsors = re.sub(r"\s+", " ", sponsors).strip(" 。") or UNKNOWN
 
+    retrieved_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    source_url = source_url or DETAIL_URL.format(code=code)
     record = {
         "code": code,
         "name": company_name or UNKNOWN,
         "source": "金吾资讯（基础资料）；捷利交易宝（孖展，经金吾汇总）",
-        "scraped_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "scraped_at": retrieved_at,
         "subscription_start": start,
         "closing_date": closing,
         "subscription_period": f"{start} 至 {closing}" if start and closing else UNKNOWN,
@@ -187,10 +250,16 @@ def extract_detail(text: str, code: str = "", name: str = "") -> Dict:
         "sponsors": sponsors,
         "fundraising": _extract_fundraising(text),
     }
-    return normalize_ipo(record)
+    normalized = normalize_ipo(record)
+    normalized["field_meta"] = _build_field_meta(
+        normalized, text=text, source_url=source_url, retrieved_at=retrieved_at
+    )
+    return normalize_ipo(normalized)
 
 
-def discover_active_ipos(page) -> List[Dict[str, str]]:
+def discover_active_ipos(
+    page, snapshot_path: Optional[Path] = None
+) -> List[Dict[str, str]]:
     """Discover under-subscription IPO codes and names from the live calendar API."""
     calendar: Dict = {}
 
@@ -205,6 +274,12 @@ def discover_active_ipos(page) -> List[Dict[str, str]]:
     page.goto(CALENDAR_URL, wait_until="networkidle", timeout=40_000)
     page.wait_for_timeout(2_000)
 
+    if snapshot_path:
+        snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+        snapshot_path.write_text(
+            json.dumps(calendar, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
     body = calendar.get("body", {}) if isinstance(calendar, dict) else {}
     records = []
     for ipo in body.get("underSubscription", []):
@@ -216,7 +291,9 @@ def discover_active_ipos(page) -> List[Dict[str, str]]:
 
 
 def scrape_all(
-    codes: Optional[List[str]] = None, timeout: int = 25_000
+    codes: Optional[List[str]] = None,
+    timeout: int = 25_000,
+    raw_dir: Optional[Path] = None,
 ) -> List[Dict]:
     try:
         from playwright.sync_api import sync_playwright
@@ -229,10 +306,16 @@ def scrape_all(
         return []
 
     results = []
+    if raw_dir:
+        raw_dir = Path(raw_dir)
+        raw_dir.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         discovery_page = browser.new_page()
-        discovered = discover_active_ipos(discovery_page)
+        discovered = discover_active_ipos(
+            discovery_page,
+            snapshot_path=raw_dir / "calendar.json" if raw_dir else None,
+        )
         discovery_page.close()
         name_map = {item["code"]: item["name"] for item in discovered}
         targets = codes or [item["code"] for item in discovered]
@@ -253,7 +336,15 @@ def scrape_all(
                 )
                 page.wait_for_timeout(2_000)
                 text = page.text_content("body") or ""
-                detail = extract_detail(text, code=code, name=name_map.get(code, ""))
+                detail_url = DETAIL_URL.format(code=code)
+                if raw_dir:
+                    (raw_dir / f"{code}_detail.txt").write_text(text, encoding="utf-8")
+                detail = extract_detail(
+                    text,
+                    code=code,
+                    name=name_map.get(code, ""),
+                    source_url=detail_url,
+                )
                 if detail.get("closing_date") and detail.get("offer_price") != UNKNOWN:
                     results.append(detail)
                     print(
@@ -276,10 +367,15 @@ def main() -> int:
     parser.add_argument("--codes", help="逗号分隔的股票代码；默认自动发现")
     parser.add_argument("--output", "-o", help="输出 JSON 文件；默认 stdout")
     parser.add_argument("--timeout", type=int, default=25_000, help="单页超时毫秒数")
+    parser.add_argument("--raw-dir", help="保存日历响应和逐只详情页原文")
     args = parser.parse_args()
 
     codes = [item.strip() for item in args.codes.split(",")] if args.codes else None
-    results = scrape_all(codes=codes, timeout=args.timeout)
+    results = scrape_all(
+        codes=codes,
+        timeout=args.timeout,
+        raw_dir=Path(args.raw_dir) if args.raw_dir else None,
+    )
     if not results:
         print("❌ 未获取到有效 IPO 数据", file=sys.stderr)
         return 1

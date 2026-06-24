@@ -13,9 +13,13 @@ from typing import Any, Dict, List, Optional
 
 from clawback_calculator import calc as clawback_calc
 from ipo_schema import (
+    STATUS_LABELS,
     UNKNOWN,
     display,
     extract_records,
+    field_display,
+    field_has_issue,
+    field_status,
     format_market_cap,
     format_share_count,
     heat_score,
@@ -112,6 +116,11 @@ def build_context(raw: Any, now: Optional[datetime] = None) -> Dict[str, Any]:
         optional = missing_fields(record, OPTIONAL_FIELDS)
         record["_missing_critical"] = critical
         record["_missing_optional"] = optional
+        record["_field_issues"] = [
+            field
+            for field in CRITICAL_FIELDS + OPTIONAL_FIELDS
+            if field_has_issue(record, field)
+        ]
         if critical:
             record["data_confidence"] = "🔴"
         elif record["days_before_close"] <= 0:
@@ -176,9 +185,9 @@ def _render_quick_table(records: List[Dict[str, Any]]) -> List[str]:
                     format_share_count(item.get("global_shares")),
                     f"{int(item.get('public_lots') or 0):,}手" if item.get("public_lots") else UNKNOWN,
                     _cell(_format_margin(item)),
-                    _cell(item["greenshoe"]),
-                    _cell(item["cornerstone"]),
-                    _cell(item["a_h"]),
+                    _cell(field_display(item, "greenshoe")),
+                    _cell(field_display(item, "cornerstone")),
+                    _cell(field_display(item, "a_h")),
                     _cell(item["industry"]),
                     format_market_cap(item.get("est_market_cap_hkd")),
                 ]
@@ -207,13 +216,20 @@ def _render_details(records: List[Dict[str, Any]]) -> List[str]:
                     f"- 招股期：{item['subscription_period']}；上市日：{item['listing_date']}；配发结果日：{item['result_date']}",
                     f"- 发售价：{item['offer_price']}；每手：{item['board_lot']}股；入场费：{_format_entry_fee(item)}",
                     f"- 全球发售：{format_share_count(item.get('global_shares'))}；初始公开比例：{item['public_pct']}；公开手数：{int(item.get('public_lots') or 0):,}手",
-                    f"- 孖展：{_format_margin(item)}；绿鞋：{item['greenshoe']}；基石：{item['cornerstone']}；A+H：{item['a_h']}",
+                    f"- 孖展：{_format_margin(item)}；绿鞋：{field_display(item, 'greenshoe')}；基石：{field_display(item, 'cornerstone')}；A+H：{field_display(item, 'a_h')}",
                     f"- 行业：{item['industry']}；预计市值：{format_market_cap(item.get('est_market_cap_hkd'))}；港股通观察：{stock_connect_analysis(item)}",
-                    f"- 保荐人：{item['sponsors']}；预计募资净额：{item['fundraising']}",
+                    f"- 保荐人：{field_display(item, 'sponsors')}；预计募资净额：{field_display(item, 'fundraising')}",
                     f"- 数据来源：{item['source']}；抓取时间：{display(item.get('scraped_at'))}",
                     "",
                 ]
             )
+            if item.get("official_prospectus_url"):
+                lines.extend(
+                    [
+                        f"- 港交所招股书：[查看原文]({item['official_prospectus_url']})；核验时间：{display(item.get('official_checked_at'))}",
+                        "",
+                    ]
+                )
     return lines
 
 
@@ -263,10 +279,10 @@ def _render_heat(records: List[Dict[str, Any]]) -> List[str]:
                 [
                     _cell(item["name"]),
                     _cell(item["margin_multiple"]),
-                    _cell(item["cornerstone"]),
+                    _cell(field_display(item, "cornerstone")),
                     f"{int(item.get('public_lots') or 0):,}手" if item.get("public_lots") else UNKNOWN,
                     _format_entry_fee(item),
-                    _cell(item["a_h"]),
+                    _cell(field_display(item, "a_h")),
                     score["coverage"],
                     f"{score['score']}/5",
                 ]
@@ -298,12 +314,19 @@ def _render_data_gaps(records: List[Dict[str, Any]]) -> List[str]:
     lines = ["## 🧩 数据完整性", ""]
     complete = True
     for item in records:
-        missing = item.get("_missing_critical", []) + item.get("_missing_optional", [])
-        if not missing:
+        issues = item.get("_field_issues", [])
+        if not issues:
             continue
         complete = False
-        labels = "、".join(FIELD_LABELS.get(field, field) for field in missing)
-        lines.append(f"- **{item['name']}**：待核实 {labels}")
+        grouped: Dict[str, List[str]] = defaultdict(list)
+        for field in issues:
+            status = field_status(item, field)
+            label = STATUS_LABELS.get(status, status or UNKNOWN)
+            grouped[label].append(FIELD_LABELS.get(field, field))
+        diagnosis = "；".join(
+            f"{label}：{'、'.join(fields)}" for label, fields in grouped.items()
+        )
+        lines.append(f"- **{item['name']}**：{diagnosis}")
     if complete:
         lines.append("关键字段与扩展字段均已获取。")
     return lines + [""]
@@ -339,7 +362,7 @@ def render_report(raw: Any, now: Optional[datetime] = None) -> str:
         [
             "---",
             f"> 数据来源：{'；'.join(sources) if sources else UNKNOWN}",
-            "> 孖展与招股数据会持续变化；缺失字段已明确标记为“待核实”。",
+            "> 孖展与招股数据会持续变化；缺失字段按获取、解析、规范化和渲染阶段标明原因。",
             "> 本报告仅作公开信息汇总，不构成投资建议。",
         ]
     )

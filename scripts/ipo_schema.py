@@ -23,6 +23,54 @@ UNKNOWN_MARKERS = {
     "未披露",
 }
 
+PROVENANCE_FIELDS = (
+    "name",
+    "code",
+    "subscription_start",
+    "closing_date",
+    "result_date",
+    "listing_date",
+    "offer_price",
+    "board_lot",
+    "entry_fee",
+    "global_shares",
+    "public_initial_pct",
+    "public_lots",
+    "margin_multiple",
+    "cornerstone",
+    "greenshoe",
+    "a_h",
+    "industry",
+    "est_market_cap_hkd",
+    "sponsors",
+    "fundraising",
+)
+
+STATUS_LABELS = {
+    "collected": "已从摘要源获取",
+    "official_confirmed": "已由港交所确认",
+    "derived": "由已确认数据推导",
+    "partial": "部分确认",
+    "authoritative_source_not_fetched": "未抓取权威来源",
+    "official_document_not_found": "未找到港交所招股书",
+    "official_document_fetch_failed": "港交所文件获取失败",
+    "parse_failed": "原文存在但解析失败",
+    "source_not_disclosed": "来源未披露",
+    "conflict": "来源冲突",
+    "untraced": "来源链路未记录",
+}
+
+ISSUE_STATUSES = {
+    "partial",
+    "authoritative_source_not_fetched",
+    "official_document_not_found",
+    "official_document_fetch_failed",
+    "parse_failed",
+    "source_not_disclosed",
+    "conflict",
+    "untraced",
+}
+
 
 def is_unknown(value: Any) -> bool:
     if value is None:
@@ -34,6 +82,96 @@ def is_unknown(value: Any) -> bool:
 
 def display(value: Any, fallback: str = UNKNOWN) -> str:
     return fallback if is_unknown(value) else str(value).strip()
+
+
+def make_field_meta(
+    value: Any,
+    status: str,
+    source_name: str = "",
+    source_url: str = "",
+    retrieved_at: str = "",
+    note: str = "",
+) -> Dict[str, Any]:
+    """Build serializable field-level provenance metadata."""
+    result = {
+        "value": value,
+        "status": status,
+        "source_name": source_name,
+        "source_url": source_url,
+        "retrieved_at": retrieved_at,
+    }
+    if note:
+        result["note"] = note
+    return result
+
+
+def field_meta(record: Dict[str, Any], field: str) -> Dict[str, Any]:
+    metadata = record.get("field_meta")
+    if isinstance(metadata, dict) and isinstance(metadata.get(field), dict):
+        return metadata[field]
+    return {}
+
+
+def field_status(record: Dict[str, Any], field: str) -> str:
+    metadata = field_meta(record, field)
+    status = str(metadata.get("status") or "").strip()
+    if status:
+        return status
+    return "untraced" if is_unknown(record.get(field)) else "collected"
+
+
+def field_status_label(record: Dict[str, Any], field: str) -> str:
+    status = field_status(record, field)
+    return STATUS_LABELS.get(status, status or UNKNOWN)
+
+
+def field_display(record: Dict[str, Any], field: str) -> str:
+    """Display a field value, or its concrete acquisition/processing state."""
+    value = record.get(field)
+    if not is_unknown(value):
+        return display(value)
+    return field_status_label(record, field)
+
+
+def field_has_issue(record: Dict[str, Any], field: str) -> bool:
+    return is_unknown(record.get(field)) or field_status(record, field) in ISSUE_STATUSES
+
+
+def _ensure_field_meta(record: Dict[str, Any]) -> None:
+    metadata = record.get("field_meta")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    source_name = display(record.get("source"), "")
+    retrieved_at = display(record.get("scraped_at"), "")
+    for field in PROVENANCE_FIELDS:
+        value = record.get(field)
+        existing = metadata.get(field)
+        if not isinstance(existing, dict):
+            existing = make_field_meta(
+                value=value,
+                status="untraced" if is_unknown(value) else "collected",
+                source_name=source_name,
+                retrieved_at=retrieved_at,
+            )
+        else:
+            existing = deepcopy(existing)
+            existing["value"] = value
+            existing.setdefault("status", "untraced" if is_unknown(value) else "collected")
+            if is_unknown(value) and existing.get("status") in {
+                "collected",
+                "official_confirmed",
+                "derived",
+            }:
+                previous_status = existing["status"]
+                existing["status"] = "conflict"
+                existing["note"] = (
+                    f"元数据标记为 {previous_status}，但规范化后的字段值为空"
+                )
+            existing.setdefault("source_name", source_name)
+            existing.setdefault("source_url", "")
+            existing.setdefault("retrieved_at", retrieved_at)
+        metadata[field] = existing
+    record["field_meta"] = metadata
 
 
 def parse_share_count(value: Any) -> int:
@@ -231,6 +369,7 @@ def normalize_ipo(raw: Dict[str, Any]) -> Dict[str, Any]:
     record["fundraising"] = display(record.get("fundraising"))
     record["source"] = display(record.get("source"), "来源未标注")
     record["scraped_at"] = display(record.get("scraped_at"), "")
+    _ensure_field_meta(record)
     return record
 
 

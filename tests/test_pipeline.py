@@ -10,7 +10,9 @@ sys.path.insert(0, SCRIPTS)
 
 from generate_report import render_report  # noqa: E402
 from generate_visual import render_html  # noqa: E402
-from ipo_schema import UNKNOWN, heat_score, normalize_ipo  # noqa: E402
+from audit_pipeline import build_audit  # noqa: E402
+from fetch_hkex_official import parse_official_text  # noqa: E402
+from ipo_schema import UNKNOWN, field_status, heat_score, normalize_ipo  # noqa: E402
 from scrape_jinwucj import extract_detail  # noqa: E402
 
 
@@ -34,6 +36,22 @@ PAGE_TEXT = """
 公司同时在 123456.SH 上市。
 """
 
+OFFICIAL_TEXT = """
+GLOBAL OFFERING
+“Sole Sponsor” Example Securities Limited
+our A Shares are listed on the Shenzhen Stock Exchange under stock code: 300866
+^THE CORNERSTONE PLACING$
+THE CORNERSTONE PLACING
+We have entered into cornerstone investment agreements.
+Assuming the Over-allotment Option is not exercised
+Approximate % of the Offer Shares
+30.00% 3.00% 26.09% 2.90%
+We believe that the Cornerstone Placing signifies confidence.
+CORNERSTONE INVESTORS
+The Over-allotment Option may require additional Offer Shares representing not more than 15% of the Offer Shares.
+The net proceeds are estimated to be approximately HK$1,003.3 million.
+"""
+
 
 class PipelineTests(unittest.TestCase):
     def setUp(self):
@@ -52,6 +70,17 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("高瓴", self.record["cornerstone"])
         self.assertTrue(self.record["greenshoe"].startswith("✅"))
         self.assertIn("123456.SH", self.record["a_h"])
+        self.assertEqual(field_status(self.record, "cornerstone"), "collected")
+        self.assertEqual(field_status(self.record, "public_lots"), "derived")
+
+    def test_scraper_classifies_missing_source_coverage(self):
+        text = PAGE_TEXT.replace("基石投资者： 高瓴、GIC、红杉", "")
+        record = extract_detail(text, code="01234")
+        self.assertEqual(record["cornerstone"], UNKNOWN)
+        self.assertEqual(
+            field_status(record, "cornerstone"),
+            "authoritative_source_not_fetched",
+        )
 
     def test_normalizer_maps_legacy_aliases(self):
         normalized = normalize_ipo(
@@ -111,6 +140,19 @@ class PipelineTests(unittest.TestCase):
         self.assertNotIn("6/23 16:00", output)
         self.assertNotIn("PT Merdeka Gold", output)
         self.assertNotIn("中科闻歌+", output)
+
+    def test_official_prospectus_parser(self):
+        parsed = parse_official_text(OFFICIAL_TEXT)
+        self.assertEqual(parsed["greenshoe"]["value"], "✅ 有（上限15%）")
+        self.assertIn("30%", parsed["cornerstone"]["value"])
+        self.assertEqual(parsed["a_h"]["value"], "✅ A+H（300866.SZ）")
+        self.assertEqual(parsed["sponsors"]["value"], "Example Securities Limited")
+        self.assertEqual(parsed["fundraising"]["value"], "10.03亿港元")
+
+    def test_pipeline_audit_detects_no_value_loss(self):
+        report = render_report([self.record], now=self.now)
+        audit = build_audit([self.record], [self.record], report)
+        self.assertEqual(audit["summary"]["pipeline_errors"], {})
 
 
 if __name__ == "__main__":

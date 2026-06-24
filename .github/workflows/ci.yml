@@ -135,5 +135,5 @@ jobs:
         run: pip install ruff
       - name: Run ruff
         run: |
-          ruff check scripts/ipo_schema.py scripts/scrape_jinwucj.py scripts/generate_report.py scripts/generate_visual.py scripts/run_report.py scripts/e2e_test.py scripts/fetch_active_ipos.py tests/test_pipeline.py
+          ruff check scripts/ipo_schema.py scripts/scrape_jinwucj.py scripts/fetch_hkex_official.py scripts/audit_pipeline.py scripts/generate_report.py scripts/generate_visual.py scripts/run_report.py scripts/e2e_test.py scripts/fetch_active_ipos.py tests/test_pipeline.py
           ruff check scripts/ || echo "⚠️ ruff warnings (non-blocking)"
