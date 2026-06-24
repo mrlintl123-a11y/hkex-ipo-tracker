@@ -1,5 +1,7 @@
-﻿import json, sys, os, argparse
-from datetime import datetime
+import json, sys, os, argparse
+from datetime import datetime, timedelta
+from math import ceil
+from math import ceil
 sys.stdout.reconfigure(encoding='utf-8')
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from clawback_calculator import calc as _clawback_calc
@@ -9,6 +11,44 @@ SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def validate_and_enrich(raw):
     if isinstance(raw, list):
         flat = raw
+        # --- countdown_days -> closing_date correction (v4.2.1) ---
+        # HK IPO cutoff: typically 9:00 AM next morning.
+        # Live countdown from jinwucj (e.g. 0.5?) means
+        # closing_date = snapshot + ceil(countdown_days).
+        dt_today = datetime.strptime(
+            datetime.now().strftime('%Y-%m-%d'), '%Y-%m-%d'
+        )
+        for i in flat:
+            cd = i.pop('countdown_days', None)
+            if cd is not None and cd > 0:
+                offset = max(1, int(ceil(cd)))
+                corrected = dt_today + timedelta(days=offset)
+                i['_original_closing_date'] = i.get('closing_date', '')
+                i['closing_date'] = corrected.strftime('%Y-%m-%d')
+                i['countdown_hours'] = int(cd * 24)
+        # --- data completeness check (v4.2.2) ---
+        # MISSING = fields where the scraper failed to extract real values.
+        # NOT_MISSING = fields genuinely not yet disclosed (margin for new IPOs).
+        # ANY missing critical field => red confidence + flag.
+        CRITICAL_FIELDS = {
+            "offer_price":    lambda v: not v or "未披露" in str(v) or "待披露" in str(v) or "待确认" in str(v),
+            "board_lot":      lambda v: not v or v == 0 or "未披露" in str(v),
+            "fundraising":    lambda v: not v or "未披露" in str(v) or "待披露" in str(v) or "待确认" in str(v),
+            "closing_date":   lambda v: not v or "未披露" in str(v) or "待披露" in str(v),
+        }
+        for i in flat:
+            missing_fields = [
+                f for f, check in CRITICAL_FIELDS.items()
+                if check(i.get(f))
+            ]
+            if missing_fields:
+                cur = i.get("data_confidence", "")
+                if cur not in ("🔴",):
+                    i["_data_confidence_before"] = cur
+                i["data_confidence"] = "🔴"
+                i["_missing_critical_data"] = True
+                i["_missing_fields"] = missing_fields
+        # --- end correction ---
         all_dates = sorted(set(i.get('closing_date', '') for i in flat if i.get('closing_date')))
         today_str = datetime.now().strftime('%Y-%m-%d')
         active = [i for i in flat if i['closing_date'] >= today_str]
@@ -44,13 +84,12 @@ def validate_and_enrich(raw):
             status = i.get('data_confidence', '\u26ab')
             conf_summary.setdefault(status, []).append(i['name'])
         key_dates = {}
-        from datetime import timedelta
         today_deadlines = [i for i in flat if i.get('closing_date') == today_str]
         tomorrow_str = (datetime.strptime(today_str, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
         tomorrow_deadlines = [i for i in flat if i.get('closing_date') == tomorrow_str]
         future_ipos = [i for i in flat if i.get('closing_date', '') > tomorrow_str]
-        key_dates['today_deadline'] = [f"{i['name']}({i.get('code','')}) {i.get('closing_date','')} 16:00截止" for i in today_deadlines] or ['无']
-        key_dates['tomorrow_deadline'] = [f"{i['name']}({i.get('code','')}) {i.get('closing_date','')} 16:00截止" for i in tomorrow_deadlines] or ['无']
+        key_dates['today_deadline'] = [f"{i['name']}({i.get('code','')}) {i.get('closing_date','')} 9:00截止" for i in today_deadlines] or ['无']
+        key_dates['tomorrow_deadline'] = [f"{i['name']}({i.get('code','')}) {i.get('closing_date','')} 9:00截止" for i in tomorrow_deadlines] or ['无']
         if future_ipos:
             nd = sorted(future_ipos, key=lambda x: x.get('closing_date', ''))
             key_dates['next_deadline'] = [f"{nd[0]['name']}({nd[0].get('code','')}) {nd[0].get('closing_date','')} 截止"]
@@ -65,6 +104,7 @@ def load_data():
     parser = argparse.ArgumentParser(description='HKEX IPO Report Generator v4.1.2')
     parser.add_argument('--input', '-i', help='JSON file with IPO data')
     parser.add_argument('--demo', action='store_true', help='Use sample data for demo only (NOT live data)')
+    parser.add_argument('--strict', action='store_true', help='Fail with error when critical IPO data is missing (no placeholder output)')
     args = parser.parse_args()
 
     is_demo = False
@@ -75,7 +115,23 @@ def load_data():
         with open(args.input, 'r', encoding='utf-8') as f:
             raw = json.load(f)
         try:
-            return validate_and_enrich(raw)
+            enriched = validate_and_enrich(raw)
+            # --strict: fail on missing critical data
+            if args.strict:
+                ipos = enriched.get('active_ipos', enriched if isinstance(enriched, list) else [])
+                bad = [
+                    (i['name'], i.get('_missing_fields', []))
+                    for i in ipos if i.get('_missing_critical_data')
+                ]
+                if bad:
+                    print('ERROR: --strict mode: the following IPOs have missing critical data:', file=sys.stderr)
+                    for name, fields in bad:
+                        print(f'  - {name}: missing {fields}', file=sys.stderr)
+                    print('', file=sys.stderr)
+                    print('  Fix: re-run scrape_jinwucj.py to get complete data:', file=sys.stderr)
+                    print('    python scripts/scrape_jinwucj.py -o ipos.json', file=sys.stderr)
+                    sys.exit(2)
+            return enriched
         except ValueError as e:
             print(f'ERROR: {e}', file=sys.stderr)
             print('       Expected JSON list (from fetch_active_ipos.py) or JSON object with active_ipos key.', file=sys.stderr)
@@ -274,6 +330,8 @@ for g in matrix['groups']:
         label_add = ' \u23f0明天截止'
     elif '\U0001f7e0' in statuses:
         label_add = ' \U0001f7e0招股中'
+    elif '🔴' in statuses:
+        label_add = ' 🔴数据待补全'
     else:
         label_add = ' \U0001f7e2本周新启动'
     closing_dates_str = '/'.join(sorted(set(i['closing_date'][-5:] for i in members_in_group)))
@@ -304,12 +362,16 @@ for _cd in sorted(_dg.keys()):
     _dl = _delta.days
     _hl = _dl * 24
     _td_flag = (_dl == 0)
-    _nw_flag = any("暂无" in m.get("margin_multiple", "") for m in _mbs)
+    _nw_flag = any("暂无" in m.get("margin_multiple", "") for m in _mbs) and not _td_flag
+    _missing_flag = any(m.get("_missing_critical_data") for m in _mbs)
     _lp = []
     if _td_flag: _lp.append("今日截止")
+    if _missing_flag: _lp.append("⚠️数据不完整")
     if _nw_flag: _lp.append("新启招")
     _ls = " " + " ".join(_lp) if _lp else ""
-    print(f"### 截止 {_cd[-5:]} (剩 {_dl} 天 / {_hl}h, {_cnt} 只{_ls})")
+    _ch = _mbs[0].get("countdown_hours")
+    _h_display = f" / {_ch}h" if _ch is not None else f" / {_hl}h"
+    print(f"### 截止 {_cd[-5:]} (剩 {_dl} 天{_h_display}, {_cnt} 只{_ls})")
     print()
 
     for _ix, _ip in enumerate(_mbs, 1):
@@ -375,12 +437,16 @@ print()
 # --- Key Observations ---
 print("## \U0001f50d \u5173\u952e\u89c2\u5bdf")
 print()
-today_deadlines = [i for i in active if i.get("days_before_close", 99) <= 1]
-if today_deadlines:
-    names_str = "、".join(i["name"] for i in today_deadlines)
-    print(f"1. **\u660e\u65e5\u622a\u6b62\u5012\u8ba1\u65f6**\uff1a{names_str} \u5171{len(today_deadlines)}\u53ea\u660e\u65e5 16:00 \u622a\u6b62\uff0c\u4eca\u6668\u76d8\u524d\u5b50\u5c55\u6570\u636e\u662f\u51b3\u5b9a\u80dc\u8d1f\u5173\u952e")
-ah_stocks = [i for i in ipos if i.get("a_h", "") not in ("", "\u274c")]
-if ah_stocks:
+ah_stocks = [i for i in active if i.get("a_h")]
+# Split today vs tomorrow deadlines for accurate observations
+obs_today = [i for i in active if i.get("days_before_close", 99) == 0]
+obs_tomorrow = [i for i in active if i.get("days_before_close", 99) == 1]
+if obs_today:
+    names_today = "、".join(i["name"] for i in obs_today)
+    print(f"1. **今日截止（紧急）**：{names_today} 共{len(obs_today)}只今日 9:00 截止，已无法参与")
+if obs_tomorrow:
+    names_tomorrow = "、".join(i["name"] for i in obs_tomorrow)
+    print(f"2. **明日截止倒计时**：{names_tomorrow} 共{len(obs_tomorrow)}只明日 9:00 截止，今晨盘前子展数据是决定胜负关键")
     discounts = []
     for i in ah_stocks:
         d = i.get("ah_discount", "")
@@ -485,7 +551,7 @@ print('## \U0001f514 关键时间节点')
 print()
 for k, v in dates.items():
     if k.startswith('today'): print(f'- **今日**：{v if isinstance(v, str) else chr(10).join(str(x) for x in v)}')
-    elif k.startswith('tomorrow'): print(f'- **明日 16:00**：{v if isinstance(v, str) else chr(10).join(str(x) for x in v)}')
+    elif k.startswith('tomorrow'): print(f'- **明日 9:00**：{v if isinstance(v, str) else chr(10).join(str(x) for x in v)}')
     elif 'allotment' in k: print(f'- **配发结果**：{v}')
     elif 'next' in k and not k.startswith('next_'): print(f'- **下一窗口**：{v if isinstance(v, str) else chr(10).join(str(x) for x in v)}')
 print()
@@ -493,13 +559,18 @@ print()
 # --- Footer ---
 print('---')
 active_notes = [i for i in active if i.get('days_before_close', 99) <= 1]
-new_notes = [i for i in active if '\u6682\u65e0' in i.get('margin_multiple', '')]
+new_notes = [i for i in active if '\u6682\u65e0' in i.get('margin_multiple', '') and i.get('days_before_close', 99) > 0]
 if active_notes:
     names = '\u3001'.join(i['name'] for i in active_notes)
     print(f'> \u26a0\ufe0f {names} 截止在即，关注最终孖展变化')
 if new_notes:
     names2 = '\u3001'.join(i['name'] for i in new_notes)
     print(f'> \u26a0\ufe0f {names2} 刚启动招股，暂无孖展数据，等 1-2 天再判断')
+missing_data = [i for i in ipos if i.get("_missing_critical_data")]
+if missing_data:
+    md_details = "; ".join(f"{i['name']}(缺{','.join(i.get('_missing_fields',['?']))})" for i in missing_data)
+    print(f"> 🔴 数据完整性警告: {md_details}")
+    print(f"> 🔴 请运行 scrape_jinwucj.py 重新抓取，或使用 --strict 拒绝不完整报告")
 redist_stocks = [i for i in ipos if i.get('_redistribution_applied')]
 if redist_stocks:
     notes = '、'.join(f"{i['name']}({i.get('_redistribution_applied','')})" for i in redist_stocks)

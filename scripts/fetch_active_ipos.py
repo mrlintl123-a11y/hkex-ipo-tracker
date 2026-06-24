@@ -197,6 +197,53 @@ def load_results_from_jsonl(path: str) -> list[SearchResult]:
 # CLI
 # ---------------------------------------------------------------------------
 
+
+def _enrich_with_jinwucj(ipos: list[dict]) -> list[dict]:
+    """?? scrape_jinwucj.py ?????????????"""
+    import subprocess, tempfile
+    codes = [i.get("code", "") for i in ipos if i.get("code")]
+    if not codes:
+        print("[!] ??????????", file=sys.stderr)
+        return ipos
+    codes_str = ",".join(codes)
+    script = Path(__file__).resolve().parent / "scrape_jinwucj.py"
+    if not script.exists():
+        print(f"[!] scrape_jinwucj.py ???: {script}", file=sys.stderr)
+        return ipos
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as tf:
+        tf_path = tf.name
+    try:
+        result = subprocess.run(
+            ["python", str(script), "--codes", codes_str, "-o", tf_path],
+            capture_output=True, text=True, timeout=180,
+        )
+        if result.returncode != 0:
+            print(f"[!] scrape_jinwucj ??: {result.stderr[-300:]}", file=sys.stderr)
+            return ipos
+        with open(tf_path, "r", encoding="utf-8") as f:
+            details = json.load(f)
+        # Merge: overwrite with scraped detail data
+        detail_map = {d["code"]: d for d in details if d.get("code")}
+        for ipo in ipos:
+            code = ipo.get("code", "")
+            if code in detail_map:
+                d = detail_map[code]
+                for key in ("offer_price", "board_lot", "closing_date", "listing_date",
+                           "fundraising", "sponsors", "cornerstone", "greenshoe",
+                           "a_h", "margin_multiple", "entry_fee", "market_cap",
+                           "subscription_period", "public_initial_pct", "public_lots"):
+                    if d.get(key):
+                        ipo[key] = d[key]
+                ipo["data_confidence"] = "🟡"  # upgraded: now from detail page
+        print(f"✅ ???????? {len(detail_map)} ???", file=sys.stderr)
+    except Exception as e:
+        print(f"[!] enrich ??: {e}", file=sys.stderr)
+    finally:
+        try: os.unlink(tf_path)
+        except: pass
+    return ipos
+
+
 def main():
     import argparse
 

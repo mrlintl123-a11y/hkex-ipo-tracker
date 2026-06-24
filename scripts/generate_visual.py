@@ -79,13 +79,20 @@ def heat_score(ipo):
         except: ahs = 3
     return round(0.3*ms + 0.25*cs + 0.2*ls + 0.15*fs + 0.1*ahs, 2)
 
+
+
+def _try_parse_margin(m_str):
+    try:
+        return float(m_str.replace("倍", ""))
+    except:
+        return 0
 sorted_ipos = sorted(ipos, key=heat_score, reverse=True)
 
 active = [i for i in ipos if i["closing_date"] >= today.strftime("%Y-%m-%d")]
 tomorrow_close = [i for i in active if i.get("days_before_close", 99) <= 1]
 ah_stocks = [i for i in ipos if i.get("a_h", "") not in ("", "❌")]
 redist = [i for i in ipos if i.get("_redistribution_applied")]
-max_mult = max((float(i.get("margin_multiple","0").replace("倍","") or 0) for i in ipos), default=1)
+max_mult = max((_try_parse_margin(i.get("margin_multiple","0")) for i in ipos), default=1)
 
 closing_dates = sorted(set(i["closing_date"] for i in active))
 matrix_rows = []
@@ -184,7 +191,7 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hel
 <h2>📈 孖展认购倍数对比</h2>
 <div class="bar-chart">
 '''
-for ipo in sorted(ipos, key=lambda x: float(x.get("margin_multiple","0").replace("倍","") or 0), reverse=True):
+for ipo in sorted(ipos, key=lambda x: _try_parse_margin(x.get("margin_multiple","0")), reverse=True):
     m_str = ipo.get("margin_multiple", "0")
     try: m = float(m_str.replace("倍",""))
     except: m = 0
