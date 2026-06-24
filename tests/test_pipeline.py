@@ -154,6 +154,16 @@ class PipelineTests(unittest.TestCase):
         audit = build_audit([self.record], [self.record], report)
         self.assertEqual(audit["summary"]["pipeline_errors"], {})
 
+    def test_pipeline_audit_ignores_records_intentionally_filtered_from_report(self):
+        closed = dict(self.record)
+        closed["code"] = "09999"
+        closed["closing_date"] = "2026-06-23"
+        closed["period_end"] = "2026-06-23"
+        report = render_report([self.record, closed], now=self.now)
+        audit = build_audit([self.record, closed], [self.record, closed], report)
+        self.assertNotIn("09999", report)
+        self.assertEqual(audit["summary"]["pipeline_errors"], {})
+
 
 if __name__ == "__main__":
     unittest.main()
