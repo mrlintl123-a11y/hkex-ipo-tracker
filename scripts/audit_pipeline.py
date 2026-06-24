@@ -75,6 +75,9 @@ def build_audit(
     for record in final_records:
         code = str(record.get("code", "")).zfill(5)
         scraped = scraped_by_code.get(code, {})
+        rendered_record = (
+            f"（{code}）" in report_text or f"| {code} |" in report_text
+        )
         fields = {}
         for field in AUDIT_FIELDS:
             status = field_status(record, field)
@@ -88,6 +91,7 @@ def build_audit(
                 pipeline_errors[diagnosis] += 1
             elif (
                 report_text
+                and rendered_record
                 and field in {"cornerstone", "greenshoe", "a_h", "sponsors", "fundraising"}
                 and not is_unknown(value)
                 and str(value) not in report_text
