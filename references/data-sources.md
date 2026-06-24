@@ -8,11 +8,11 @@
 - 上市文件（公司业务、保荐人）
 
 ### 抓取方式
-- 直接访问：`https://www.hkex.com.hk/Listing/IPO/IPO-Documents`
-- 搜索：「港交所 招股章程」「HKEX IPO prospectus」
+- 标题检索：`https://www1.hkexnews.hk/search/titlesearch.xhtml?lang=en`
+- 自动流程：`scripts/fetch_hkex_official.py` 先按股票代码取得港交所内部证券 ID，再定位 `Listing Documents - Offer for Subscription / GLOBAL OFFERING` 招股书 PDF。
 
 ### 限制
-- PDF 格式，内容提取需做 OCR 或找文字版摘要
+- PDF 文字层异常时可能需要 OCR；此时字段状态必须标记为 `official_document_fetch_failed`，不得静默退回猜测值。
 - 实时配售结果通常 18:00 后发布
 
 ## B. 智通财经（zhitongcaijing.com / so.html5.qq.com）

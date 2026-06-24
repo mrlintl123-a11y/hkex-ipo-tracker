@@ -5,7 +5,9 @@
 ## ✨ 核心特性
 
 - 📅 **资金冲突矩阵**：自动按"招股截止日间隔 < 2 天"分组，识别资金互锁的批次
-- 🔍 **来源透明**：金吾基础资料 + 捷利交易宝孖展；未核实字段明确标注，必要时再用港交所文件复核
+- 🔍 **字段级来源透明**：金吾基础资料 + 捷利交易宝孖展 + 港交所招股书自动核验；每个字段记录来源 URL、获取时间和处理状态
+- 🧾 **权威字段补全**：自动定位披露易招股书，补全绿鞋、基石、A+H、保荐人和募资净额
+- 🩺 **链路自查**：区分来源未抓取、文件未找到、原文解析失败、规范化丢失、渲染丢失和来源冲突
 - ⏰ **认购倍数时点标注**：必标"截止前 N 天"，未至截止加 `⚠️ 仍会变`
 - 📋 **一表速查**：上市日 / 公司 / 截止日 / 公开手数 / 认购倍数 / 绿鞋 / 基石 / A+H
 - 🚫 **「无新股」也要汇报**：绝不静默（避免用户错过真实新股）
@@ -19,8 +21,9 @@ flowchart TD
     A[Cron 触发<br/>工作日 17:00] --> B{trading_calendar.py<br/>是否交易日?}
     B -->|❌ 非交易日| C[输出今日休市<br/>原因 XXX]
     B -->|✅ 交易日| D[金吾实时日历 + 详情页<br/>捷利交易宝孖展]
-    D --> E[统一字段契约<br/>缺失数据标注待核实]
-    E --> F{有新股?}
+    D --> E[港交所标题检索<br/>下载并解析招股书]
+    E --> K[统一字段契约<br/>字段级来源与状态]
+    K --> F{有新股?}
     F -->|是| G[生成冲突矩阵<br/>一表速查<br/>+ 策略建议]
     F -->|否| H[汇报实时日历暂无新股<br/>建议必要时核对港交所]
     F -->|数据源异常| I[汇报异常<br/>建议人工核对]
@@ -54,7 +57,7 @@ python3 -m pip install -r requirements.txt
 python3 -m playwright install chromium
 ```
 
-随后一条命令生成实时 Markdown 和 HTML 报告：
+随后一条命令生成实时 Markdown、HTML、原始资料留档和数据审计报告：
 
 ```bash
 python3 scripts/run_report.py
@@ -75,10 +78,12 @@ python3 scripts/trading_calendar.py 2026-07-01 --json
 # 每日 IPO 例行检查
 python3 scripts/daily_check.py
 
-# 实时抓取并分别生成报告
-python3 scripts/scrape_jinwucj.py --output fresh_ipos.json
+# 实时抓取、港交所补全并分别生成报告
+python3 scripts/scrape_jinwucj.py --output scraped_ipos.json --raw-dir raw/jinwu
+python3 scripts/fetch_hkex_official.py --input scraped_ipos.json --output fresh_ipos.json --raw-dir raw/hkex
 python3 scripts/generate_report.py --input fresh_ipos.json --output ipo_report.md
 python3 scripts/generate_visual.py --input fresh_ipos.json --output ipo_report.html
+python3 scripts/audit_pipeline.py --input fresh_ipos.json --scraped scraped_ipos.json --report ipo_report.md --output-json data_audit.json --output-md data_audit.md
 
 # 冲突矩阵计算（通过 stdin 喂 JSON）
 python3 scripts/parse_conflict_matrix.py <<'EOF'
@@ -130,7 +135,7 @@ EOF
 ```
 hkex-ipo-tracker/
 ├── SKILL.md                          # Codex 主工作流
-├── requirements.txt                  # Playwright 依赖
+├── requirements.txt                  # Playwright + pypdf 依赖
 ├── README.md                         # 本文件
 ├── LICENSE                           # MIT License
 ├── .gitignore
@@ -139,6 +144,7 @@ hkex-ipo-tracker/
 │       └── ci.yml                    # GitHub Actions CI
 ├── references/
 │   ├── data-sources.md               # 6 个数据源抓取指南
+│   ├── data-quality.md               # 字段来源状态与链路自查规则
 │   ├── ipo-fields.md                 # 字段定义 + 计算公式
 │   ├── ipo-mechanics.md              # 港股 IPO 机制（回拨/绿鞋/基石/FINI）
 │   ├── holidays_2026.json            # 2026 年港股休市日
@@ -147,6 +153,8 @@ hkex-ipo-tracker/
     ├── run_report.py                 # 一键实时报告
     ├── ipo_schema.py                 # 统一字段与评分契约
     ├── scrape_jinwucj.py             # Playwright 实时抓取
+    ├── fetch_hkex_official.py         # 港交所招股书发现与字段补全
+    ├── audit_pipeline.py              # 字段级数据链路自查
     ├── generate_report.py            # Markdown 报告
     ├── generate_visual.py            # HTML 报告
     ├── trading_calendar.py           # 港股交易日判断

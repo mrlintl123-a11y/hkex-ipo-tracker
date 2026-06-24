@@ -13,8 +13,11 @@ from typing import Any, Dict, List, Optional
 
 from generate_report import build_context
 from ipo_schema import (
+    STATUS_LABELS,
     UNKNOWN,
     display,
+    field_display,
+    field_status,
     format_market_cap,
     format_share_count,
     heat_score,
@@ -101,7 +104,7 @@ def render_html(raw: Any, now: Optional[datetime] = None) -> str:
         </style></head><body><div class="container">""",
         "<header>",
         "<h1>港交所正在招股信息汇总</h1>",
-        f'<div class="sub">实时快照 {esc(context["snapshot"])} · 缺失字段明确标注“待核实”</div>',
+        f'<div class="sub">实时快照 {esc(context["snapshot"])} · 缺失字段显示具体链路状态</div>',
         "</header>",
         '<div class="cards">',
         f'<div class="card"><div class="number">{len(records)}</div><div class="label">正在招股</div></div>',
@@ -162,9 +165,9 @@ def render_html(raw: Any, now: Optional[datetime] = None) -> str:
             f'<span class="muted">{int(item.get("public_lots") or 0):,}手</span></td>'
             f'<td><span class="tag {_margin_class(parse_margin_multiple(item.get("margin_multiple")))}">'
             f'{esc(item["margin_multiple"])}</span><br><span class="muted">{esc(item.get("margin_data_date"))}</span></td>'
-            f'<td class="{_unknown_class(item["greenshoe"])}">{esc(item["greenshoe"])}</td>'
-            f'<td class="{_unknown_class(item["cornerstone"])}">{esc(item["cornerstone"])}</td>'
-            f'<td class="{_unknown_class(item["a_h"])}">{esc(item["a_h"])}</td>'
+            f'<td class="{_unknown_class(item["greenshoe"])}">{esc(field_display(item, "greenshoe"))}</td>'
+            f'<td class="{_unknown_class(item["cornerstone"])}">{esc(field_display(item, "cornerstone"))}</td>'
+            f'<td class="{_unknown_class(item["a_h"])}">{esc(field_display(item, "a_h"))}</td>'
             f'<td>{esc(item["industry"])}<br><span class="muted">{esc(format_market_cap(item.get("est_market_cap_hkd")))}</span></td>'
             f'<td>{esc(stock_connect_analysis(item))}</td>'
             f'<td class="muted">{esc(item["source"])}</td>'
@@ -196,11 +199,19 @@ def render_html(raw: Any, now: Optional[datetime] = None) -> str:
         "fundraising": "募资净额",
     }
     for item in records:
-        missing = item.get("_missing_critical", []) + item.get("_missing_optional", [])
-        if missing:
+        issues = item.get("_field_issues", [])
+        if issues:
             gaps += 1
-            text = "、".join(labels.get(field, field) for field in missing)
-            parts.append(f'<li><strong>{esc(item["name"])}</strong>：待核实 {esc(text)}</li>')
+            grouped: Dict[str, List[str]] = {}
+            for field in issues:
+                status = field_status(item, field)
+                status_label = STATUS_LABELS.get(status, status or UNKNOWN)
+                grouped.setdefault(status_label, []).append(labels.get(field, field))
+            text = "；".join(
+                f"{status_label}：{'、'.join(fields)}"
+                for status_label, fields in grouped.items()
+            )
+            parts.append(f'<li><strong>{esc(item["name"])}</strong>：{esc(text)}</li>')
     if not gaps:
         parts.append("<li>关键字段与扩展字段均已获取。</li>")
     parts.append("</ul></section>")
