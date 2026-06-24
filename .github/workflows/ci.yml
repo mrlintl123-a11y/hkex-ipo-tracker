@@ -10,6 +10,9 @@ jobs:
   validate:
     name: Validate skill structure
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.12"]
 
     steps:
       - name: Checkout code
@@ -18,7 +21,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: |
@@ -105,6 +108,12 @@ jobs:
           ]' | python3 scripts/parse_conflict_matrix.py
           echo "✅ parse_conflict_matrix tests passed"
 
+      - name: Run pipeline regression tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Run portable E2E smoke tests
+        run: python3 scripts/e2e_test.py
+
       - name: Run quick_validate (skill-creator)
         run: |
           if [ -f /dev/stdin ]; then
@@ -126,4 +135,5 @@ jobs:
         run: pip install ruff
       - name: Run ruff
         run: |
+          ruff check scripts/ipo_schema.py scripts/scrape_jinwucj.py scripts/generate_report.py scripts/generate_visual.py scripts/run_report.py scripts/e2e_test.py scripts/fetch_active_ipos.py tests/test_pipeline.py
           ruff check scripts/ || echo "⚠️ ruff warnings (non-blocking)"

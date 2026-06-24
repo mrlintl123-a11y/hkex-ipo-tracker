@@ -22,23 +22,23 @@ HKEX IPO 数据抓取器（多后端适配版）
 """
 
 import json
+import os
 import re
+import subprocess
 import sys
-sys.stdout.reconfigure(encoding='utf-8')
+import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
-# 将 scripts 目录加入路径以导入 search_provider
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 from search_provider import (
-    SearchQuery,
     SearchResult,
-    FetchBatch,
     get_provider,
     build_ipo_queries,
     AgentNativeProvider,
 )
+from ipo_schema import normalize_ipo
+
+sys.stdout.reconfigure(encoding='utf-8')
 
 
 # ---------------------------------------------------------------------------
@@ -199,8 +199,7 @@ def load_results_from_jsonl(path: str) -> list[SearchResult]:
 
 
 def _enrich_with_jinwucj(ipos: list[dict]) -> list[dict]:
-    """?? scrape_jinwucj.py ?????????????"""
-    import subprocess, tempfile
+    """用 scrape_jinwucj.py 补全实时详情，并统一字段契约。"""
     codes = [i.get("code", "") for i in ipos if i.get("code")]
     if not codes:
         print("[!] ??????????", file=sys.stderr)
@@ -214,7 +213,7 @@ def _enrich_with_jinwucj(ipos: list[dict]) -> list[dict]:
         tf_path = tf.name
     try:
         result = subprocess.run(
-            ["python", str(script), "--codes", codes_str, "-o", tf_path],
+            [sys.executable, str(script), "--codes", codes_str, "-o", tf_path],
             capture_output=True, text=True, timeout=180,
         )
         if result.returncode != 0:
@@ -228,19 +227,19 @@ def _enrich_with_jinwucj(ipos: list[dict]) -> list[dict]:
             code = ipo.get("code", "")
             if code in detail_map:
                 d = detail_map[code]
-                for key in ("offer_price", "board_lot", "closing_date", "listing_date",
-                           "fundraising", "sponsors", "cornerstone", "greenshoe",
-                           "a_h", "margin_multiple", "entry_fee", "market_cap",
-                           "subscription_period", "public_initial_pct", "public_lots"):
-                    if d.get(key):
-                        ipo[key] = d[key]
+                for key, value in d.items():
+                    if value not in (None, ""):
+                        ipo[key] = value
+                ipo.update(normalize_ipo(ipo))
                 ipo["data_confidence"] = "🟡"  # upgraded: now from detail page
         print(f"✅ ???????? {len(detail_map)} ???", file=sys.stderr)
     except Exception as e:
         print(f"[!] enrich ??: {e}", file=sys.stderr)
     finally:
-        try: os.unlink(tf_path)
-        except: pass
+        try:
+            os.unlink(tf_path)
+        except OSError:
+            pass
     return ipos
 
 

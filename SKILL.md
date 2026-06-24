@@ -1,47 +1,57 @@
 ---
 name: hkex-ipo-tracker
-description: "查询并汇总港交所（HKEX）正在招股的公司，含招股详情、认购倍数、公开手数、中签率预估、绿鞋机制、基石投资者、A+H 标记，以及资金冲突矩阵。触发关键词：港股招股、港交所IPO、正在招股、新股打新、IPO 周报、HKEX IPO、配发结果、孖展认购、招股期、新股中签率、孖展倍数、回拨。"
+description: "实时查询并汇总港交所（HKEX）正在招股的新股，生成完整 Markdown 与 HTML 报告，涵盖招股期、发售价、入场费、全球发售、公开手数、孖展倍数、绿鞋、基石投资者、A+H、行业、市值、资金冲突和数据完整性。用于港股招股、港交所 IPO、正在招股、新股打新、IPO 周报、孖展认购、配发结果、中签率、回拨等请求。"
 ---
 
-# CRITICAL: 三步强制工作流
+# 港交所 IPO 实时汇总
 
-每次调用此 skill 必须完整执行以下三步，不可跳过任何一步：
+始终使用实时抓取数据，不得用仓库中的 `live_ipos.json` 或示例数据冒充最新结果。
 
-## STEP 1: 抓取实时数据
-- 检查交易日: python scripts/trading_calendar.py
-- 抓取 IPO 数据: python scripts/scrape_jinwucj.py --output fresh_ipos.json
-- 若脚本报 FATAL（Playwright 未安装），用 Node REPL 的 Playwright 手动抓取：访问 https://ipo.jinwucj.com/ 提取列表 + 逐个抓取详情页，编译 fresh_ipos.json
+## 首次运行
 
-## STEP 2: 生成两份报告
+要求 Python 3.9+。若 Playwright 尚未安装，执行：
+
 ```bash
-python scripts/generate_report.py --input fresh_ipos.json
-python scripts/generate_visual.py --input fresh_ipos.json
+python3 -m pip install -r requirements.txt
+python3 -m playwright install chromium
 ```
 
-## STEP 3: 完整输出
-- 将 generate_report.py 的 **完整 stdout** 逐字粘贴到对话框
-- 附上 HTML 链接: [ipo_report.html](C:/Users/a/.codex/skills/hkex-ipo-tracker/ipo_report.html)
-- **严禁** summarize、截断、只贴部分行
+## 标准工作流
 
-# 输出禁止事项
-- 不要用"..."省略表格行
-- 不要说"详见完整报告"
-- 不要说"共XX只，这里展示前N只"
-- 所有 IPO 必须出现在报告正文中
+在 skill 根目录执行一键流程：
 
-# 数据源
-- 主源: 金吾资讯 (ipo.jinwucj.com)
-- 备用: 智通财经, LiveReport, 港交所披露易
-- 所有数据必须实时获取，禁止使用缓存文件替代
+```bash
+python3 scripts/run_report.py
+```
 
-# 参考脚本
-- scripts/scrape_jinwucj.py — Playwright 抓取金吾资讯详情页
-- scripts/generate_report.py — 生成 Markdown 报告（含个股详情卡片）
-- scripts/generate_visual.py — 生成 ipo_report.html 可视化
-- scripts/trading_calendar.py — 交易日判断
-- scripts/clawback_calculator.py — 18A/18C 回拨计算
-- scripts/risk_score.py — 五维风险评估
-- scripts/funding_scheduler.py — 资金排期助手
+该命令会依次：
 
-# 报告格式（由 generate_report.py 自动生成）
-报告包含以下板块：资金冲突矩阵 → 新股速查表 → 个股详情（按截止日分组） → 关键观察 → 热度评分 → 资金分档策略 → 关键时间节点
+1. 检查港股交易日。
+2. 从金吾资讯实时发现正在招股的新股并逐只抓取详情。
+3. 生成 `fresh_ipos.json`、`ipo_report.md` 和 `ipo_report.html`。
+4. 将完整 Markdown 报告输出到 stdout。
+
+若一键流程失败，可逐步执行：
+
+```bash
+python3 scripts/trading_calendar.py
+python3 scripts/scrape_jinwucj.py --output fresh_ipos.json
+python3 scripts/generate_report.py --input fresh_ipos.json --output ipo_report.md
+python3 scripts/generate_visual.py --input fresh_ipos.json --output ipo_report.html
+```
+
+## 输出要求
+
+- 将 `generate_report.py` 或 `run_report.py` 输出的完整 Markdown 原样展示，不省略任何 IPO。
+- 附上命令最后打印的 `HTML_REPORT` 实际路径，不得写死 Windows 或用户目录。
+- 所有表格单元格必须有值；未从来源确认的字段显示“待核实”。
+- 不得把“待核实”解释为“没有”，也不得让未知维度参与热度评分。
+- 报告必须注明真实使用的数据来源与抓取时间，不得声称未执行的多源验证。
+
+## 数据质量
+
+主数据源为金吾资讯；孖展数据由其汇总自捷利交易宝。港交所披露易是招股书、配发结果、基石与绿鞋信息的权威来源。若用户要求权威核验，优先用港交所文件补充“待核实”字段，再重新生成报告。
+
+字段规范与公式见 `references/ipo-fields.md`，数据源选择见 `references/data-sources.md`。
+
+本 skill 仅汇总公开信息，不构成投资建议。

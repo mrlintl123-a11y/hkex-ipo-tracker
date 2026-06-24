@@ -5,7 +5,7 @@
 ## ✨ 核心特性
 
 - 📅 **资金冲突矩阵**：自动按"招股截止日间隔 < 2 天"分组，识别资金互锁的批次
-- 🔍 **多源交叉验证**：智通财经 + 金吾资讯 + 港交所披露易三源校验，避免"无新股"误报
+- 🔍 **来源透明**：金吾基础资料 + 捷利交易宝孖展；未核实字段明确标注，必要时再用港交所文件复核
 - ⏰ **认购倍数时点标注**：必标"截止前 N 天"，未至截止加 `⚠️ 仍会变`
 - 📋 **一表速查**：上市日 / 公司 / 截止日 / 公开手数 / 认购倍数 / 绿鞋 / 基石 / A+H
 - 🚫 **「无新股」也要汇报**：绝不静默（避免用户错过真实新股）
@@ -18,11 +18,11 @@
 flowchart TD
     A[Cron 触发<br/>工作日 17:00] --> B{trading_calendar.py<br/>是否交易日?}
     B -->|❌ 非交易日| C[输出今日休市<br/>原因 XXX]
-    B -->|✅ 交易日| D[智通财经 + 金吾资讯<br/>+ 港交所披露易]
-    D --> E[三级交叉验证<br/>L0/L1/L2/L3]
+    B -->|✅ 交易日| D[金吾实时日历 + 详情页<br/>捷利交易宝孖展]
+    D --> E[统一字段契约<br/>缺失数据标注待核实]
     E --> F{有新股?}
     F -->|是| G[生成冲突矩阵<br/>一表速查<br/>+ 策略建议]
-    F -->|否| H[多源确认<br/>汇报近期无新股]
+    F -->|否| H[汇报实时日历暂无新股<br/>建议必要时核对港交所]
     F -->|数据源异常| I[汇报异常<br/>建议人工核对]
     G --> J[推送到飞书]
     H --> J
@@ -32,12 +32,13 @@ flowchart TD
 
 ## 🚀 快速开始
 
-### 1. 直接使用（作为 OpenClaw Skill）
+### 1. 直接使用（作为 Codex / OpenClaw Skill）
 
-把这个目录放到你的 OpenClaw workspace 的 `skills/` 目录下：
+Codex 用户把仓库目录放到 `~/.codex/skills/`；OpenClaw 用户放到 workspace 的 `skills/`：
 
 ```bash
-cp -r hkex-ipo-tracker ~/.openclaw/workspace/skills/
+cp -r hkex-ipo-tracker ~/.codex/skills/
+# 或：cp -r hkex-ipo-tracker ~/.openclaw/workspace/skills/
 ```
 
 然后触发关键词即可：
@@ -45,6 +46,19 @@ cp -r hkex-ipo-tracker ~/.openclaw/workspace/skills/
 - `港股招股` / `港交所IPO` / `正在招股` / `新股打新`
 - `IPO 周报` / `HKEX IPO` / `配发结果` / `孖展`
 - `招股期` / `新股中签率` / `孖展倍数` / `回拨`
+
+首次运行安装抓取依赖：
+
+```bash
+python3 -m pip install -r requirements.txt
+python3 -m playwright install chromium
+```
+
+随后一条命令生成实时 Markdown 和 HTML 报告：
+
+```bash
+python3 scripts/run_report.py
+```
 
 ### 2. 单独使用 CLI 工具
 
@@ -60,6 +74,11 @@ python3 scripts/trading_calendar.py 2026-07-01 --json
 
 # 每日 IPO 例行检查
 python3 scripts/daily_check.py
+
+# 实时抓取并分别生成报告
+python3 scripts/scrape_jinwucj.py --output fresh_ipos.json
+python3 scripts/generate_report.py --input fresh_ipos.json --output ipo_report.md
+python3 scripts/generate_visual.py --input fresh_ipos.json --output ipo_report.html
 
 # 冲突矩阵计算（通过 stdin 喂 JSON）
 python3 scripts/parse_conflict_matrix.py <<'EOF'
@@ -110,7 +129,8 @@ EOF
 
 ```
 hkex-ipo-tracker/
-├── SKILL.md                          # 主工作流（6 步）
+├── SKILL.md                          # Codex 主工作流
+├── requirements.txt                  # Playwright 依赖
 ├── README.md                         # 本文件
 ├── LICENSE                           # MIT License
 ├── .gitignore
@@ -124,6 +144,11 @@ hkex-ipo-tracker/
 │   ├── holidays_2026.json            # 2026 年港股休市日
 │   └── sample-data.json              # 模板数据
 └── scripts/
+    ├── run_report.py                 # 一键实时报告
+    ├── ipo_schema.py                 # 统一字段与评分契约
+    ├── scrape_jinwucj.py             # Playwright 实时抓取
+    ├── generate_report.py            # Markdown 报告
+    ├── generate_visual.py            # HTML 报告
     ├── trading_calendar.py           # 港股交易日判断
     ├── daily_check.py                # 每日例行检查（多源验证）
     ├── parse_conflict_matrix.py      # 冲突矩阵计算
@@ -143,7 +168,8 @@ hkex-ipo-tracker/
 
 ## ⚙️ 依赖
 
-- Python 3.7+
+- Python 3.9+
+- Playwright + Chromium（`pip install -r requirements.txt && playwright install chromium`）
 - **搜索后端**（任选其一）：
   - `agent_native`：无需额外依赖，由 Codex / Claude / GPT agent 原生搜索（默认）
   - `mmx`：MiniMax mmx CLI（`pip install mmx-cli`）
@@ -212,6 +238,7 @@ MIT License — 详见 [LICENSE](./LICENSE)
 | 配发追踪 | allotment_tracker.py | 含套路拨检测(公开>=100x但最终仅10%) |
 | 回拨计算 | clawback_calculator.py | 18A/18C重新分配+标准回拨 |
 
-`ash
-python scripts/e2e_test.py   # 一次测试全部 8 个模块
-`
+```bash
+python3 scripts/e2e_test.py
+python3 -m unittest discover -s tests -v
+```
