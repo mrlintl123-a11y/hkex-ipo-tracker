@@ -1,257 +1,47 @@
 ---
 name: hkex-ipo-tracker
-description: "查询并汇总港交所（HKEX）正在招股的公司，含招股详情、认购倍数、公开手数、中签率预估、绿鞋机制、基石投资者、A+H 标记，以及按截止日间隔不到 2 天即冲突构建的资金冲突矩阵。多搜索后端适配：Codex/Claude/GPT 原生搜索、MiniMax mmx CLI、自定义命令。触发关键词：港股招股、港交所IPO、正在招股、新股打新、IPO 周报、HKEX IPO、配发结果、孖展认购、招股期、新股中签率、孖展倍数、回拨。"
+description: "查询并汇总港交所（HKEX）正在招股的公司，含招股详情、认购倍数、公开手数、中签率预估、绿鞋机制、基石投资者、A+H 标记，以及资金冲突矩阵。触发关键词：港股招股、港交所IPO、正在招股、新股打新、IPO 周报、HKEX IPO、配发结果、孖展认购、招股期、新股中签率、孖展倍数、回拨。"
 ---
 
-## ⚠️ CRITICAL: Data Freshness Rule (v4.1.1+)
+# CRITICAL: 三步强制工作流
 
-**ALL data MUST come from live web search. NEVER use cached data or sample-data.json as a substitute.**
+每次调用此 skill 必须完整执行以下三步，不可跳过任何一步：
 
-## ⚠️ OUTPUT RULE: Present Full Report in Dialog (v4.1.1+)
+## STEP 1: 抓取实时数据
+- 检查交易日: python scripts/trading_calendar.py
+- 抓取 IPO 数据: python scripts/scrape_jinwucj.py --output fresh_ipos.json
+- 若抓取失败，改用 Playwright 直接访问 https://ipo.jinwucj.com/ 提取内容后手工编译 JSON
 
-**When generating a report, you MUST present the COMPLETE output of generate_report.py directly in the dialog.**
-Do NOT summarize, condense, or hand-pick rows. The script already produces a properly formatted Markdown report.
-- Run: python scripts/generate_report.py --input ipos.json
-- Run: python scripts/generate_visual.py --input ipos.json  (auto-generates ipo_report.html)
-- Copy the FULL stdout output into your final answer verbatim
-- Include a link to the generated HTML visual report: [IPO Visual Report](C:\Users\a\.codex\skills\hkex-ipo-tracker\ipo_report.html)
-- If the report exceeds context limits, present all tables in full; only truncate verbose descriptions
-
-
-- sample-data.json is for DEMO/TESTING only. Run with: python scripts/generate_report.py --demo
-- Production workflow: web search → results.jsonl → fetch_active_ipos.py --input → flat list JSON → generate_report.py --input (auto-enriches)
-- If web search fails, report the failure honestly. Do NOT silently fall back to stale data.
-- Every report MUST include the data snapshot timestamp in the header.
-
-
-# HKEX IPO Tracker
-
-汇总港交所当前正在招股（含已启动未截止）的新股，给打新投资者做**资金排期+标的筛选+热度判断**。
-
-## 何时使用
-
-- 用户说"港交所正在招股""新股打新""IPO 周报""配发结果""孖展""中签率"
-- 关键词组合：`#港股招股` `#IPO 跟踪` `#孖展统计` `#配发结果`
-
-## 输出标准（用户已固定）
-
-任何输出必须包含以下三件套：
-
-1. **冲突矩阵**：按"招股截止日间隔 < 2 天 = 资金冲突"分组；间隔 ≥ 2 天的批次用 🟢 标记可分流
-2. **认购倍数时点标注**：基于"截止日前 1 天"数据为基准；如果汇报时尚未到截止日，必须注明"⚠️ 未至截止仍会变"
-3. **一表速查**：字段固定为 `上市日 | 公司 | 代码 | 截止日 | 距截止天数 | 全球发售 | 公开手数 | 认购倍数+可信度 | 绿鞋 | 基石 | A+H`
-
-## 工作流
-
-### 0. 交易日判断（首步必走）
-
+## STEP 2: 生成两份报告
 ```bash
-python scripts/trading_calendar.py        # 检查今天
-python scripts/trading_calendar.py 2026-07-01   # 检查指定日期
+python scripts/generate_report.py --input fresh_ipos.json
+python scripts/generate_visual.py --input fresh_ipos.json
 ```
 
-- ✅ 交易日 → 继续 1-6 步
-- ❌ 非交易日（周末/节假日）→ 直接输出「今日休市」汇报，跳过 IPO 检查
-- ⚠️ 日历未覆盖（如 2027+ 年）→ 提示需更新 holidays 表
+## STEP 3: 完整输出
+- 将 generate_report.py 的 **完整 stdout** 逐字粘贴到对话框
+- 附上 HTML 链接: [ipo_report.html](C:/Users/a/.codex/skills/hkex-ipo-tracker/ipo_report.html)
+- **严禁** summarize、截断、只贴部分行
 
-数据源：`references/holidays_YYYY.json`（每年初搜索最新交易日历更新）
+# 输出禁止事项
+- 不要用"..."省略表格行
+- 不要说"详见完整报告"
+- 不要说"共XX只，这里展示前N只"
+- 所有 IPO 必须出现在报告正文中
 
-### 1. 数据抓取（多源交叉，规避单源失真）
+# 数据源
+- 主源: 金吾资讯 (ipo.jinwucj.com)
+- 备用: 智通财经, LiveReport, 港交所披露易
+- 所有数据必须实时获取，禁止使用缓存文件替代
 
-**⚠️ 必须使用你的网络搜索工具实时获取数据，禁止使用本地缓存文件。**
+# 参考脚本
+- scripts/scrape_jinwucj.py — Playwright 抓取金吾资讯详情页
+- scripts/generate_report.py — 生成 Markdown 报告（含个股详情卡片）
+- scripts/generate_visual.py — 生成 ipo_report.html 可视化
+- scripts/trading_calendar.py — 交易日判断
+- scripts/clawback_calculator.py — 18A/18C 回拨计算
+- scripts/risk_score.py — 五维风险评估
+- scripts/funding_scheduler.py — 资金排期助手
 
-按以下顺序取数据，先并行搜索：
-
-- **A 智通财经**（新股孖展统计/公司公告）→ 使用你的网络搜索：「港股 新股孖展 统计 日」
-- **B 金吾资讯**（ipo.jinwucj.com）→ 直接访问 / 搜索「港交所 IPO 正在招股 认购倍数」
-- **C LiveReport 大数据**（雪球活报告）→ 搜索「港股 IPO 招股周报 一手中签率」
-- **D 港交所披露易**（hkexnews.hk）→ 搜索 / 直接访问招股章程页面
-- **E 上市公司 A 股公告**（巨潮/上交所/深交所）→ 搜索 A+H 公司 A 股收盘价
-
-> 💡 **搜索后端选择**：本 skill 适配多种搜索后端。环境变量 `SEARCH_PROVIDER` 控制：
-> - `agent_native`（默认）— 由你（Codex/Claude/GPT agent）使用自身网络搜索能力执行查询
-> - `mmx` — MiniMax mmx CLI（`pip install mmx-cli` 后可用）
-> - `custom` — 通过 `CUSTOM_SEARCH_CMD` 环境变量指定命令模板
->
-> **agent_native 工作流**：
-> 1. 运行 `python scripts/search_provider.py --emit-queries` 获取搜索查询清单
-> 2. 用你的网络搜索工具逐条执行查询
-> 3. 将结果写入 `results.jsonl`（每行一个 `SearchResult` JSON）
-> 4. 运行 `python scripts/fetch_active_ipos.py --input results.jsonl` 解析
-**数据源优先级**：
-- **价格/招股数/截止日/基石名单** → D 港交所披露易（招股章程）
-- **认购倍数（孖展）** → A 智通财经（每日盘后更新）
-- **公开手数 / 一手中签率** → C LiveReport 大数据 或 配发结果公告
-- **A+H 比价 / 折价** → E 上市公司 A 股收盘价
-
-### 2. 字段计算
-
-每只新股必须算出以下字段（脚本见 `scripts/parse_ipo.py`）：
-
-| 字段 | 算法 | 数据源 |
-|---|---|---|
-| 全球发售 | 招股章程直接读取 | D |
-| 公开手数 | `全球发售 × 初始公开比例（10% 或 5%） ÷ 每手股数` | D + 计算 |
-| 认购倍数 | 孖展金额 / 公开发售额（含杠杆，公开认购倍数通常略低）| A |
-| 中签率预估 | 按回拨规则（见 `references/ipo-mechanics.md`）+ 历史 1-2 个月新股类比 | 规则 + C |
-| 资金冲突组 | 截止日间隔 < 2 天归为同组 | 计算 |
-| 数据可信度 | 🟢 截止后/🟡 截止前 1 天/🟠 截止前 2 天+/⚫ 刚启动 | 计算 |
-
-### 3. 冲突矩阵构建（核心规则）
-
-**资金回流周期**：港股打新 FINI 机制下，资金于**截止日 + 2 个交易日**解冻。
-
-**冲突判定**：
-- 批次 A 截止日 `D1`，批次 B 截止日 `D2`
-- 若 `D2 - D1 < 2` 天 → 🔴 资金冲突（同组）
-- 若 `D2 - D1 ≥ 2` 天 → 🟢 资金可分流（不同组）
-
-> **示例**：6/17 截止 vs 6/18 截止 = 1 天差 = 🔴 冲突；6/17 vs 6/19 = 2 天差 = 🟢 不冲突
-
-**注意**：因冲突的传递性（A↔B 冲突 + B↔C 冲突 = A↔B↔C 全部互锁），需用**连通图算法**求"超级冲突组"，避免错把 A 与 C 判定为可分流。
-
-### 4. 热度评分
-
-按以下权重打分（5 星制）：
-
-| 因子 | 权重 | 评分依据 |
-|---|---|---|
-| 孖展倍数 | 30% | ≥500 倍→5⭐，100-500→4⭐，50-100→3⭐，15-50→2⭐，<15→1⭐ |
-| 基石阵容 | 25% | ≥5 家明星机构→5⭐，3-4 家→4⭐，1-2 家→3⭐，无→1⭐ |
-| 公开手数 | 20% | <1.5 万手→5⭐（抢手），1.5-3 万→3⭐，>3 万→2⭐（容易中） |
-| 入场费 | 15% | ≥5000 港元→5⭐，3000-5000→3⭐，<3000→2⭐ |
-| A+H 折价 | 10% | 折价 >40%→5⭐，20-40%→3⭐，<20%→2⭐ |
-
-### 5. 输出格式（固定模板）
-
-```markdown
-# 📊 港交所正在招股公司全景（YYYY-MM-DD HH:MM 更新）
-
-## ⚠️ 资金冲突矩阵
-[截止日 × 截止日 表格，红绿标注]
-
-## 🔴 冲突组 A（截止日 X/Y/Z，N 只）
-[表格：上市日 | 公司 | 代码 | 截止日 | 距截止 | 全球发售 | 公开手数 | 认购倍数 | 绿鞋 | 基石 | A+H]
-
-## 🟢 独立窗口（截止日 X，N 只）
-[同上表格]
-
-## 📋 认购倍数数据可信度
-[状态表格：🟢🟡🟠⚫ 四档]
-
-## 🎯 资金分档策略
-[<1万 / 1-5万 / 5-50万 / >50万 各自建议标的]
-
-## ⏰ 关键时间节点
-- 今日 HH:MM：X 公司招股截止
-- 明日 HH:MM：X 公司招股截止
-- 配发结果预计时间
-```
-
-### 5.5 生成可视化 HTML 报告 (v4.2)
-
-```bash
-python scripts/generate_visual.py --input ipos.json
-```
-
-- 自动生成 ipo_report.html
-- 包含柱状图（孖展倍数 + 热度评分）、冲突矩阵热力图、IPO 详情表、关键观察、策略分档
-- 报告末尾附带 HTML 文件链接，方便在浏览器中查看全景
-- 同样支持 --demo 模式用于测试
-
-### 6. 配发结果追踪（可选）
-
-如果用户问"配发结果"或时间已到截止日 + 1 个交易日：
-- 抓取港交所披露易的"配发结果公告"PDF
-- 提取：一手中签率、回拨后公开比例、最终发售价、基石是否兜售
-- 对比预估，标记实际差异
-
-## 注意事项
-
-- **数据时点必标**：所有孖展数据必须带"截止前 N 天"标签；刚启动的标"🆕 暂无孖展"
-- **A+H 折价警告**：A+H 第二上市的新股，折价空间是首日表现的核心因素
-- **套路拨风险**：国配不足时即使公开倍数高也可能不回拨 → 历史案例：金叶国际 9030 倍却未回拨
-- **FINI 结算**：T+2 资金解冻，影响二次打新的实际可参与性
-
-## 「无新股」处理流程（每日例行检查必走）
-
-**触发场景**：定时任务跑出 0 家新股，或主动查询返回空。
-
-**绝对禁止**：抓取失败 / 网络异常 → 直接报"无新股"（这会让用户错过真实新股）
-
-### 三级确认机制
-
-| 级别 | 条件 | 结论 |
-|---|---|---|
-| **L1 单源确认** | 1 个数据源返回 0 家 | ⚠️ 不可信，需 L2 验证 |
-| **L2 双源交叉** | 智通+金吾 全部返回 0 家 | 较可信，可报"近期无新股" |
-| **L3 港交所披露易交叉** | + 港交所披露易无新招股 | ✅ 确认无误，可正式汇报 |
-
-### 输出模板
-
-**有新股时**（按上文"输出格式"输出完整报告）
-
-**无新股时（确认无误）**：
-```markdown
-🟢 【港交所每日 IPO 检查】YYYY-MM-DD HH:MM
-
-- 当日及未来 7 日内**无新股正在招股**
-- 数据源交叉验证：智通财经 ✅ / 金吾资讯 ✅ / 港交所披露易 ✅
-- 下一次有新股预计：[从递表名单/聆讯进度推断]
-- 详细已递表名单见附注
-```
-
-**数据源异常时**：
-```markdown
-⚠️ 【港交所每日 IPO 检查】YYYY-MM-DD HH:MM
-
-- 本次检查**未能确认**是否有新股在招股
-- 数据源状态：
-  - 智通财经：❌ 抓取失败 / 超时
-  - 金吾资讯：✅ 返回 0 家
-  - 港交所披露易：⚠️ 部分响应
-- 建议：人工核对后再下结论
-```
-
-## 扩展资源
-
-- `references/data-sources.md` — 各数据源的 URL 模板与抓取策略
-- `references/ipo-fields.md` — 字段定义与计算公式
-- `references/ipo-mechanics.md` — 港股 IPO 回拨规则、绿鞋/基石机制
-- `scripts/fetch_active_ipos.py` — 主抓取脚本
-- `scripts/parse_conflict_matrix.py` — 冲突矩阵计算
-
-
-## 7. A+H 折价分析 (v4.0)
-
-```ash
-python scripts/calc_ah_discount.py --a <A价格> --h <H发售价> --rate <汇率>
-python scripts/calc_ah_discount.py --demo
-`
-
-## 8. 5维风险评分 (v4.0)
-
-```ash
-python scripts/risk_score.py --demo
-python scripts/risk_score.py --input ipos.json
-`
-
-## 9. 资金排期助手 (v4.0)
-
-```ash
-python scripts/funding_scheduler.py --funds 50000 --preference Moderate
-`
-
-## 10. 首日预测 & 配发追踪 (v4.0)
-
-```ash
-python scripts/historical_first_day.py --demo
-python scripts/allotment_tracker.py --demo
-python scripts/clawback_calculator.py --demo
-`
-
-## 11. 端到端测试
-
-```ash
-python scripts/e2e_test.py
-`
+# 报告格式（由 generate_report.py 自动生成）
+报告包含以下板块：资金冲突矩阵 → 新股速查表 → 个股详情（按截止日分组） → 关键观察 → 热度评分 → 资金分档策略 → 关键时间节点
